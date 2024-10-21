@@ -51,28 +51,36 @@ def process(img, pixel_size=4):
 
     return trans(img)[None, :, :, :]
 
+
+def rgb_to_hsv_array(rgb):
+    r, g, b = rgb[..., 0] / 255.0, rgb[..., 1] / 255.0, rgb[..., 2] / 255.0
+    hsv = np.array([colorsys.rgb_to_hsv(r[i], g[i], b[i]) for i in range(len(r))])
+    return hsv
+
+
+def hsv_to_rgb_array(hsv):
+    rgb = np.array([colorsys.hsv_to_rgb(h, s, v) for h, s, v in hsv])
+    return (rgb * 255).astype(np.uint8)
+
 # copy original hue and saturation
 def color_image(img, original_img, copy_hue, copy_sat):
     img = img.convert("RGB")
     original_img = original_img.convert("RGB")
 
-    colored_img = Image.new("RGB", img.size)
+    img_data = np.array(img)
+    original_data = np.array(original_img)
 
-    for x in range(img.width):
-        for y in range(img.height):
-            pixel = original_img.getpixel((x, y))
-            r, g, b = pixel
-            original_h, original_s, original_v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+    original_hsv = rgb_to_hsv_array(original_data.reshape(-1, 3))
+    img_hsv = rgb_to_hsv_array(img_data.reshape(-1, 3))
 
-            pixel = img.getpixel((x, y))
-            r, g, b = pixel
-            h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+    if copy_hue:
+        img_hsv[:, 0] = original_hsv[:, 0]
+    if copy_sat:
+        img_hsv[:, 1] = original_hsv[:, 1]
 
-            r, g, b = colorsys.hsv_to_rgb(original_h if copy_hue else h, original_s if copy_sat else s, v)
-            colored_img.putpixel((x, y), (int(r * 255), int(g * 255), int(b * 255)))
+    img_data = hsv_to_rgb_array(img_hsv).reshape(img_data.shape)
 
-    return colored_img
-
+    return Image.fromarray(img_data)
 
 def to_image(tensor, pixel_size, upscale_after, original_img, copy_hue, copy_sat):
     img = tensor.data[0].cpu().float().numpy()
