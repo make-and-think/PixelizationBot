@@ -1,6 +1,8 @@
 import uuid
 import time
 import asyncio
+import logging
+import os
 
 import aiofiles
 import aiofiles.os
@@ -9,6 +11,17 @@ from telethon.tl.types import BotCommand, BotCommandScopeDefault
 from telethon.tl.functions.bots import SetBotCommandsRequest
 
 from config.config import config
+
+if not os.path.exists('logs'):
+    os.makedirs('logs')
+
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s',
+                    handlers=[
+                        logging.FileHandler('logs/bot.log'),
+                        logging.StreamHandler()
+                    ])
+logger = logging.getLogger(__name__)
 
 class AsyncTempFile:
     def __init__(self, ext=''):
@@ -79,6 +92,7 @@ class QueueProcessor:
         task = Task(event=event, queue_n=self.qsize)
         self.queue.append(task)
         await task.update_message()
+        logger.info(f"Task added for processing image: {event.photo}")  # Logging
 
     async def loop(self):
         while True:
@@ -91,6 +105,7 @@ class QueueProcessor:
 
             try:
                 async with AsyncTempFile('.png') as f_in, AsyncTempFile('.png') as f_out:
+                    logger.info(f"Downloading image: ID={task.event.photo.id}, Access Hash={task.event.photo.access_hash}, Date={task.event.photo.date}, Sizes={[(size.type, size.w, size.h) for size in task.event.photo.sizes]}")
                     await bot.download_media(task.event.photo, file=f_in.name)
 
                     proc = await asyncio.create_subprocess_shell(
@@ -100,12 +115,13 @@ class QueueProcessor:
                     )
                     stdout, stderr = await proc.communicate()
                     if proc.returncode != 0:
-                        print(f'Error in pixelization.py: {stderr.decode()}')
+                        logger.error(f'Error in pixelization.py: {stderr.decode()}')  # Logging
                         task.error = True
                     else:
+                        logger.info(f"Image processed successfully: {f_out.name}")  # Logging
                         await task.event.reply(file=f_out.name, force_document=True)
             except Exception as e:
-                print(f'Error processing task: {e}')
+                logger.error(f'Error processing task: {e}')  # Logging
                 task.error = True
             finally:
                 self.times_history.append(time.time() - task.start_ts)
@@ -155,10 +171,13 @@ async def help_message(event):
     await event.reply(help_text)
 
 async def main():
+    logger.info("Starting the main bot loop")  # Logging
     bot.loop.create_task(processor.loop())
     await bot.run_until_disconnected()
 
 if __name__ == '__main__':
     with bot:
+        logger.info("Setting bot commands")  # Logging
         bot.loop.run_until_complete(set_bot_commands())
+        logger.info("Starting the bot")  # Logging
         bot.loop.run_until_complete(main())
