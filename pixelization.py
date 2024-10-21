@@ -8,7 +8,6 @@ import colorsys
 from PIL import Image
 from models.logic.networks import define_G
 
-# Пути к файлам моделей и эталонному изображению
 NETG_PATH = "models/160_net_G_A.pth"
 ALIASNET_PATH = "models/alias_net.pth"
 REFERENCE_PATH = "reference.png"
@@ -19,7 +18,7 @@ def get_device():
 
 
 def load_model_weights(model, weights_path, device):
-    state_dict = torch.load(weights_path, map_location=device)
+    state_dict = torch.load(weights_path, map_location=device, weights_only=True)
     model.load_state_dict(state_dict, strict=False)
     return model
 
@@ -114,8 +113,8 @@ class PixelizationModel:
             self.G_A_net = define_G(3, 3, 64, "c2pGen", "instance", False, "normal", 0.02, [0] if torch.cuda.is_available() else [])
             self.alias_net = define_G(3, 3, 64, "antialias", "instance", False, "normal", 0.02, [0] if torch.cuda.is_available() else [])
 
-            self.G_A_net = load_model_weights(self.G_A_net, self.netG_path, self.device, weights_only=True)
-            self.alias_net = load_model_weights(self.alias_net, self.aliasnet_path, self.device, weights_only=True)
+            self.G_A_net = load_model_weights(self.G_A_net, self.netG_path, self.device)
+            self.alias_net = load_model_weights(self.alias_net, self.aliasnet_path, self.device)
 
             ref_img = Image.open(self.reference_path).convert('L')
             self.ref_t = process(greyscale(ref_img)).to(self.device)
