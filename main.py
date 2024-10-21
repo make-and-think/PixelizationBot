@@ -4,7 +4,9 @@ import asyncio
 
 import aiofiles
 import aiofiles.os
-from telethon import TelegramClient, events
+from telethon import TelegramClient, events, functions
+from telethon.tl.types import BotCommand, BotCommandScopeDefault
+from telethon.tl.functions.bots import SetBotCommandsRequest
 
 from config.config import config
 
@@ -123,12 +125,34 @@ bot = TelegramClient(
 
 processor = QueueProcessor()
 
+async def set_bot_commands():
+    commands = [
+        BotCommand(command='start', description='Show available commands'),
+        BotCommand(command='help', description='Get help on how to use the bot'),
+    ]
+    lang_code = 'en'
+
+    await bot(SetBotCommandsRequest(scope=BotCommandScopeDefault(), lang_code=lang_code, commands=commands))
+
 @bot.on(events.NewMessage)
 async def on_message(event):
     if not event.photo:
-        await event.reply('Please, provide an image to pixelate.')
+        await event.reply('Please provide an image to pixelate.')
         return
     await processor.add_task(event)
+
+@bot.on(events.NewMessage(pattern='/start'))
+async def handle_start_command(event):
+    await event.respond("Hello! Here are the available commands:\n/start - show available commands\n/help - get help.")
+
+@bot.on(events.NewMessage(pattern='/help'))
+async def help_message(event):
+    help_text = (
+        "I am a bot for pixelating images. Here’s what I can do:\n"
+        "Send an image, and I will pixelate it for you.\n"
+        "You can specify the pixel size by sending a number from 1 to 16 in the message along with the image."
+    )
+    await event.reply(help_text)
 
 async def main():
     bot.loop.create_task(processor.loop())
@@ -136,4 +160,5 @@ async def main():
 
 if __name__ == '__main__':
     with bot:
+        bot.loop.run_until_complete(set_bot_commands())
         bot.loop.run_until_complete(main())
