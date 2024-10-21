@@ -1,10 +1,10 @@
 import sys
 import os
+import logging
 import numpy as np
 import torch
 import torchvision.transforms as transforms
 import colorsys
-
 from PIL import Image
 from models.logic.networks import define_G
 
@@ -12,13 +12,26 @@ NETG_PATH = "models/160_net_G_A.pth"
 ALIASNET_PATH = "models/alias_net.pth"
 REFERENCE_PATH = "reference.png"
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler("logs/pixelization.log", mode='w')
+    ]
+)
+logger = logging.getLogger(__name__)
+
 
 def get_device():
-    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    logger.info(f"Using device: {device}")
+    return device
 
 
 def load_model_weights(model, weights_path, device):
-    state_dict = torch.load(weights_path, map_location=device, weights_only=True)
+    logger.info(f"Loading model weights from: {weights_path}")
+    state_dict = torch.load(weights_path, map_location=device)
     model.load_state_dict(state_dict, strict=False)
     return model
 
@@ -62,6 +75,7 @@ def hsv_to_rgb_array(hsv):
     rgb = np.array([colorsys.hsv_to_rgb(h, s, v) for h, s, v in hsv])
     return (rgb * 255).astype(np.uint8)
 
+
 # copy original hue and saturation
 def color_image(img, original_img, copy_hue, copy_sat):
     img = img.convert("RGB")
@@ -81,6 +95,7 @@ def color_image(img, original_img, copy_hue, copy_sat):
     img_data = hsv_to_rgb_array(img_hsv).reshape(img_data.shape)
 
     return Image.fromarray(img_data)
+
 
 def to_image(tensor, pixel_size, upscale_after, original_img, copy_hue, copy_sat):
     img = tensor.squeeze().cpu().numpy()
@@ -102,6 +117,7 @@ def to_image(tensor, pixel_size, upscale_after, original_img, copy_hue, copy_sat
 def save(tensor, file, pixel_size=4, upscale_after=True, original_img=None, copy_hue=False, copy_sat=False):
     img = to_image(tensor, pixel_size, upscale_after, original_img, copy_hue, copy_sat)
     img.save(file)
+    logger.info(f"Image saved to {file}")
 
 
 class PixelizationModel:
@@ -115,6 +131,7 @@ class PixelizationModel:
         self.ref_t = None
 
     def load(self):
+        logger.info("Loading models...")
         with torch.no_grad():
             self.G_A_net = define_G(3, 3, 64, "c2pGen", "instance", False, "normal", 0.02, [0] if torch.cuda.is_available() else [])
             self.alias_net = define_G(3, 3, 64, "antialias", "instance", False, "normal", 0.02, [0] if torch.cuda.is_available() else [])
@@ -125,7 +142,10 @@ class PixelizationModel:
             ref_img = Image.open(self.reference_path).convert('L')
             self.ref_t = process(greyscale(ref_img)).to(self.device)
 
+        logger.info("Models loaded successfully")
+
     def pixelize(self, in_img, out_img, pixel_size=4, upscale_after=True, copy_hue=False, copy_sat=False):
+        logger.info(f"Pixelizing image {in_img} with pixel size {pixel_size}")
         with torch.no_grad():
             original_img = Image.open(in_img).convert('RGB')
             in_t = process(original_img, pixel_size).to(self.device)
@@ -134,10 +154,12 @@ class PixelizationModel:
 
             save(out_t, out_img, pixel_size, upscale_after, original_img, copy_hue, copy_sat)
 
+        logger.info(f"Pixelization completed for image {in_img}. Output saved to {out_img}")
+
 
 def main():
     if len(sys.argv) < 4:
-        print("Usage: python pixelization.py <input_image> <output_image> <pixel_size> [--upscale-after] [--copy-hue] [--copy-sat]")
+        logger.error("Usage: python pixelization.py <input_image> <output_image> <pixel_size> [--upscale-after] [--copy-hue] [--copy-sat]")
         sys.exit(1)
 
     input_image = sys.argv[1]
@@ -149,7 +171,7 @@ def main():
     copy_sat = '--copy-sat' in sys.argv
 
     if not os.path.isfile(input_image):
-        print(f"Input image '{input_image}' does not exist.")
+        logger.error(f"Input image '{input_image}' does not exist.")
         sys.exit(1)
 
     model = PixelizationModel()
