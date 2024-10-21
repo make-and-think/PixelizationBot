@@ -103,7 +103,7 @@ class QueueProcessor:
             await bot.download_media(task.event.photo, file=f_in.name)
 
             proc = await asyncio.create_subprocess_shell(
-              f'python pixelization.py {f_in.name} {f_out.name} {task.pixel_size}'
+              f'python pixelization.py {f_in.name} {f_out.name} {task.pixel_size} --upscale-after --copy-hue --copy-sat'
             )
             await proc.communicate()
 
