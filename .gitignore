@@ -162,5 +162,7 @@ cython_debug/
 #.idea/
 
 config.yml
+*.sessiom
+*.session-journal
 
 *.pth

@@ -6,11 +6,16 @@ import torchvision.transforms as transforms
 
 from PIL import Image
 
-from models.networks import define_G
+from models.logic.networks import define_G
+
+netGPath = "models/160_net_G_A.pth"
+aliasnetPath = "models/alias_net.pth"
+
+referencePath = "reference.png"
 
 class Model():
   def __init__(self):
-    self.device = torch.device("cuda")
+    self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     self.G_A_net = None
     self.alias_net = None
     self.ref_t = None
@@ -20,18 +25,13 @@ class Model():
       self.G_A_net = define_G(3, 3, 64, "c2pGen", "instance", False, "normal", 0.02, [0])
       self.alias_net = define_G(3, 3, 64, "antialias", "instance", False, "normal", 0.02, [0])
 
-      G_A_state = torch.load("160_net_G_A.pth", map_location=self.device)
-      for p in list(G_A_state.keys()):
-        G_A_state["module."+str(p)] = G_A_state.pop(p)
-
+      G_A_state = torch.load(netGPath, map_location=self.device, weights_only=True)
       self.G_A_net.load_state_dict(G_A_state)
 
-      alias_state = torch.load("alias_net.pth", map_location=self.device)
-      for p in list(alias_state.keys()):
-        alias_state["module."+str(p)] = alias_state.pop(p)
+      alias_state = torch.load(aliasnetPath, map_location=self.device, weights_only=True)
       self.alias_net.load_state_dict(alias_state)
 
-      ref_img = Image.open("reference.png").convert('L')
+      ref_img = Image.open(referencePath).convert('L')
       self.ref_t = process(greyscale(ref_img)).to(self.device)
 
   def pixelize(self, in_img, out_img, pixel_size=4):
@@ -78,6 +78,9 @@ def save(tensor, file, pixel_size=4):
   img.save(file)
 
 if __name__ == "__main__":
+  if len(sys.argv) < 4:
+    print("Usage: python pixelization.py <input_image> <output_image> <pixel_size>")
+    sys.exit(1)
   m = Model()
   m.load()
   m.pixelize(sys.argv[1], sys.argv[2], int(sys.argv[3]))

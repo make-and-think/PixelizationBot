@@ -121,7 +121,7 @@ class PixelBlockEncoder(nn.Module):
         super(PixelBlockEncoder, self).__init__()
         vgg19 = models.vgg.vgg19()
         vgg19.classifier._modules['6'] = nn.Linear(4096, 7, bias=True)
-        vgg19.load_state_dict(torch.load('./pixelart_vgg19.pth', map_location=torch.device('cuda')))
+        vgg19.load_state_dict(torch.load('models/pixelart_vgg19.pth', map_location=torch.device("cuda" if torch.cuda.is_available() else "cpu"), weights_only=True))
         self.vgg = vgg19.features
         for p in self.vgg.parameters():
             p.requires_grad = False
