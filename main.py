@@ -6,7 +6,7 @@ import aiofiles
 import aiofiles.os
 from telethon import TelegramClient, events
 
-from config import config
+from config.config import config
 
 class AsyncTempFile:
     def __init__(self, ext=''):
