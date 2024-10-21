@@ -83,20 +83,18 @@ def color_image(img, original_img, copy_hue, copy_sat):
     return Image.fromarray(img_data)
 
 def to_image(tensor, pixel_size, upscale_after, original_img, copy_hue, copy_sat):
-    img = tensor.data[0].cpu().float().numpy()
-    img = (np.transpose(img, (1, 2, 0)) + 1) / 2.0 * 255.0
-    img = img.astype(np.uint8)
+    img = tensor.squeeze().cpu().numpy()
+    img = ((img + 1) / 2 * 255).astype(np.uint8)
+    img = np.transpose(img, (1, 2, 0))
     img = Image.fromarray(img)
-    width = img.size[0] // 4
-    height = img.size[1] // 4
-    img = img.resize((width, height), resample=Image.Resampling.NEAREST)
+    img = img.resize((img.width // 4, img.height // 4), resample=Image.Resampling.NEAREST)
 
     if copy_hue or copy_sat:
-        original_img = original_img.resize((width, height), resample=Image.Resampling.NEAREST)
+        original_img = original_img.resize(img.size, resample=Image.Resampling.NEAREST)
         img = color_image(img, original_img, copy_hue, copy_sat)
 
     if upscale_after:
-        img = img.resize((img.size[0] * pixel_size, img.size[1] * pixel_size), resample=Image.Resampling.NEAREST)
+        img = img.resize((img.width * pixel_size, img.height * pixel_size), resample=Image.Resampling.NEAREST)
 
     return img
 
