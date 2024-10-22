@@ -3,12 +3,16 @@ import time
 import asyncio
 import logging
 import os
+import io
+import tempfile
 
 import aiofiles
 import aiofiles.os
 from telethon import TelegramClient, events, functions
 from telethon.tl.types import BotCommand, BotCommandScopeDefault
 from telethon.tl.functions.bots import SetBotCommandsRequest
+from pixelization import PixelizationModel
+from PIL import Image
 
 from config.config import config
 
@@ -104,24 +108,31 @@ class QueueProcessor:
             task.start_ts = time.time()
 
             try:
-                async with AsyncTempFile('.png') as f_in, AsyncTempFile('.png') as f_out:
+                async with AsyncTempFile('.png') as f_in:
                     logger.info(f"Downloading image: ID={task.event.photo.id}, Access Hash={task.event.photo.access_hash}, Date={task.event.photo.date}, Sizes={[(size.type, size.w, size.h) for size in task.event.photo.sizes]}")
                     await bot.download_media(task.event.photo, file=f_in.name)
 
-                    proc = await asyncio.create_subprocess_shell(
-                        f'python pixelization.py {f_in.name} {f_out.name} {task.pixel_size} --upscale-after --copy-hue --copy-sat',
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE
+                    original_img = Image.open(f_in.name)
+
+                    model = PixelizationModel()
+                    model.load()
+
+                    processed_img = model.pixelize(original_img, task.pixel_size, upscale_after=True, copy_hue=True, copy_sat=True)
+
+                    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as temp_file:
+                        processed_img.save(temp_file, format='PNG')
+                        temp_file_path = temp_file.name 
+
+                    logger.info(f"Image processed successfully.")
+
+                    await bot.send_file(
+                        task.event.chat_id,
+                        temp_file_path,
+                        filename='processed_image.png',
+                        force_document=True
                     )
-                    stdout, stderr = await proc.communicate()
-                    if proc.returncode != 0:
-                        logger.error(f'Error in pixelization.py: {stderr.decode()}')  # Logging
-                        task.error = True
-                    else:
-                        logger.info(f"Image processed successfully: {f_out.name}")  # Logging
-                        await task.event.reply(file=f_out.name, force_document=True)
             except Exception as e:
-                logger.error(f'Error processing task: {e}')  # Logging
+                logger.error(f'Error processing task: {e}')
                 task.error = True
             finally:
                 self.times_history.append(time.time() - task.start_ts)

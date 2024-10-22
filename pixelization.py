@@ -31,7 +31,7 @@ def get_device():
 
 def load_model_weights(model, weights_path, device):
     logger.info(f"Loading model weights from: {weights_path}")
-    state_dict = torch.load(weights_path, map_location=device)
+    state_dict = torch.load(weights_path, map_location=device, weights_only=True)
     model.load_state_dict(state_dict, strict=False)
     return model
 
@@ -144,17 +144,15 @@ class PixelizationModel:
 
         logger.info("Models loaded successfully")
 
-    def pixelize(self, in_img, out_img, pixel_size=4, upscale_after=True, copy_hue=False, copy_sat=False):
-        logger.info(f"Pixelizing image {in_img} with pixel size {pixel_size}")
+    def pixelize(self, in_img, pixel_size=4, upscale_after=True, copy_hue=False, copy_sat=False):
+        logger.info(f"Pixelizing image with pixel size {pixel_size}")
         with torch.no_grad():
-            original_img = Image.open(in_img).convert('RGB')
+            original_img = in_img.convert('RGB')
             in_t = process(original_img, pixel_size).to(self.device)
 
             out_t = self.alias_net(self.G_A_net(in_t, self.ref_t))
 
-            save(out_t, out_img, pixel_size, upscale_after, original_img, copy_hue, copy_sat)
-
-        logger.info(f"Pixelization completed for image {in_img}. Output saved to {out_img}")
+            return to_image(out_t, pixel_size, upscale_after, original_img, copy_hue, copy_sat)
 
 
 def main():
@@ -176,8 +174,13 @@ def main():
 
     model = PixelizationModel()
     model.load()
-    model.pixelize(input_image, output_image, pixel_size, upscale_after, copy_hue, copy_sat)
 
+    # Загружаем изображение и обрабатываем его
+    original_img = Image.open(input_image)
+    processed_img = model.pixelize(original_img, pixel_size, upscale_after, copy_hue, copy_sat)
+
+    processed_img.save(output_image)
+    logger.info(f"Image saved to {output_image}")
 
 if __name__ == "__main__":
     main()
