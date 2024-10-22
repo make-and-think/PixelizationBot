@@ -119,16 +119,18 @@ class QueueProcessor:
 
                     processed_img = model.pixelize(original_img, task.pixel_size, upscale_after=True, copy_hue=True, copy_sat=True)
 
-                    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as temp_file:
-                        processed_img.save(temp_file, format='PNG')
-                        temp_file_path = temp_file.name 
+                    img_byte_arr = io.BytesIO()
+                    processed_img.save(img_byte_arr, format='PNG')
+                    img_byte_arr.seek(0)
+
+                    img_byte_arr.name = 'processed_image.png'
 
                     logger.info(f"Image processed successfully.")
 
                     await bot.send_file(
                         task.event.chat_id,
-                        temp_file_path,
-                        filename='processed_image.png',
+                        img_byte_arr,
+                        filename=img_byte_arr.name,
                         force_document=True
                     )
             except Exception as e:
