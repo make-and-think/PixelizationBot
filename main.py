@@ -108,31 +108,32 @@ class QueueProcessor:
             task.start_ts = time.time()
 
             try:
-                async with AsyncTempFile('.png') as f_in:
-                    logger.info(f"Downloading image: ID={task.event.photo.id}, Access Hash={task.event.photo.access_hash}, Date={task.event.photo.date}, Sizes={[(size.type, size.w, size.h) for size in task.event.photo.sizes]}")
-                    await bot.download_media(task.event.photo, file=f_in.name)
+                img_byte_arr = io.BytesIO()
+                logger.info(f"Downloading image: ID={task.event.photo.id}, Access Hash={task.event.photo.access_hash}, Date={task.event.photo.date}, Sizes={[(size.type, size.w, size.h) for size in task.event.photo.sizes]}")
+                await bot.download_media(task.event.photo, file=img_byte_arr)
 
-                    original_img = Image.open(f_in.name)
+                img_byte_arr.seek(0)
+                original_img = Image.open(img_byte_arr)
 
-                    model = PixelizationModel()
-                    model.load()
+                model = PixelizationModel()
+                model.load()
 
-                    processed_img = model.pixelize(original_img, task.pixel_size, upscale_after=True, copy_hue=True, copy_sat=True)
+                processed_img = model.pixelize(original_img, task.pixel_size, upscale_after=True, copy_hue=True, copy_sat=True)
 
-                    img_byte_arr = io.BytesIO()
-                    processed_img.save(img_byte_arr, format='PNG')
-                    img_byte_arr.seek(0)
+                img_byte_arr = io.BytesIO()
+                processed_img.save(img_byte_arr, format='PNG')
+                img_byte_arr.seek(0)
 
-                    img_byte_arr.name = 'processed_image.png'
+                img_byte_arr.name = 'processed_image.png'
 
-                    logger.info(f"Image processed successfully.")
+                logger.info(f"Image processed successfully.")
 
-                    await bot.send_file(
-                        task.event.chat_id,
-                        img_byte_arr,
-                        filename=img_byte_arr.name,
-                        force_document=True
-                    )
+                await bot.send_file(
+                    task.event.chat_id,
+                    img_byte_arr,
+                    filename=img_byte_arr.name,
+                    force_document=True
+                )
             except Exception as e:
                 logger.error(f'Error processing task: {e}')
                 task.error = True
