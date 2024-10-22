@@ -7,18 +7,20 @@ from torch.nn import Parameter
 Margin code is borrowed from https://github.com/MuggleWang/CosFace_pytorch and https://github.com/wujiyang/Face_Pytorch.
 '''
 def cosine_sim(x1, x2, dim=1, eps=1e-8):
-    ip = torch.mm(x1, x2.t())  #  w  7*512
+    # Compute cosine similarity between two tensors
+    ip = torch.mm(x1, x2.t())  # Inner product
     w1 = torch.norm(x1, 2, dim)
     w2 = torch.norm(x2, 2, dim)
-    return ip / torch.ger(w1,w2).clamp(min=eps)
+    return ip / torch.ger(w1, w2).clamp(min=eps)
 
 class MarginCosineProduct(nn.Module):
-    r"""Implement of large margin cosine distance: :
+    r"""Implementation of large margin cosine distance.
+    
     Args:
-        in_features: size of each input sample
-        out_features: size of each output sample
-        s: norm of input feature
-        m: margin
+        in_features: Size of each input sample.
+        out_features: Size of each output sample.
+        s: Norm of input feature.
+        m: Margin.
     """
 
     def __init__(self, in_features, out_features, s=30.0, m=0.40):
@@ -27,29 +29,24 @@ class MarginCosineProduct(nn.Module):
         self.out_features = out_features
         self.s = s
         self.m = m
-        self.weight = Parameter(torch.Tensor(out_features, in_features)) # 7 512
+        self.weight = Parameter(torch.Tensor(out_features, in_features))  # Weight initialization
         nn.init.xavier_uniform_(self.weight)
-        #stdv = 1. / math.sqrt(self.weight.size(1))
-        #self.weight.data.uniform_(-stdv, stdv)
 
     def forward(self, input, label):
-        cosine = cosine_sim(input, self.weight)  # 1*512  7*512
-        # cosine = F.linear(F.normalize(input), F.normalize(self.weight))
-        # --------------------------- convert label to one-hot ---------------------------
-        # https://discuss.pytorch.org/t/convert-int-into-one-hot-format/507
+        # Compute cosine similarity
+        cosine = cosine_sim(input, self.weight)  # Shape: (1, 512) and (7, 512)
+        
+        # Convert label to one-hot encoding
         one_hot = torch.zeros_like(cosine)
         one_hot.scatter_(1, label.view(-1, 1), 1.0)
-        # -------------torch.where(out_i = {x_i if condition_i else y_i) -------------
+        
+        # Calculate output with margin
         output = self.s * (cosine - one_hot * self.m)
 
         return output
 
     def __repr__(self):
-        return self.__class__.__name__ + '(' \
-               + 'in_features=' + str(self.in_features) \
-               + ', out_features=' + str(self.out_features) \
-               + ', s=' + str(self.s) \
-               + ', m=' + str(self.m) + ')'
+        return f"{self.__class__.__name__}(in_features={self.in_features}, out_features={self.out_features}, s={self.s}, m={self.m})"
 
 class ArcMarginProduct(nn.Module):
     def __init__(self, in_feature=128, out_feature=10575, s=32.0, m=0.50, easy_margin=False):
@@ -65,25 +62,28 @@ class ArcMarginProduct(nn.Module):
         self.cos_m = math.cos(m)
         self.sin_m = math.sin(m)
 
-        # make the function cos(theta+m) monotonic decreasing while theta in [0°,180°]
+        # Ensure the function cos(theta+m) is monotonic decreasing for theta in [0°,180°]
         self.th = math.cos(math.pi - m)
         self.mm = math.sin(math.pi - m) * m
 
     def forward(self, x, label):
-        # cos(theta)
+        # Compute cos(theta)
         cosine = F.linear(F.normalize(x), F.normalize(self.weight))
-        # cos(theta + m)
+        # Compute cos(theta + m)
         sine = torch.sqrt(1.0 - torch.pow(cosine, 2))
         phi = cosine * self.cos_m - sine * self.sin_m
 
+        # Apply easy margin if specified
         if self.easy_margin:
             phi = torch.where(cosine > 0, phi, cosine)
         else:
             phi = torch.where((cosine - self.th) > 0, phi, cosine - self.mm)
 
-        #one_hot = torch.zeros(cosine.size(), device='cuda' if torch.cuda.is_available() else 'cpu')
+        # Convert label to one-hot encoding
         one_hot = torch.zeros_like(cosine)
         one_hot.scatter_(1, label.view(-1, 1), 1)
+        
+        # Calculate output with margins
         output = (one_hot * phi) + ((1.0 - one_hot) * cosine)
         output = output * self.s
 
@@ -105,139 +105,123 @@ class MultiMarginProduct(nn.Module):
         self.cos_m1 = math.cos(m1)
         self.sin_m1 = math.sin(m1)
 
-        # make the function cos(theta+m) monotonic decreasing while theta in [0°,180°]
+        # Ensure the function cos(theta+m) is monotonic decreasing for theta in [0°,180°]
         self.th = math.cos(math.pi - m1)
         self.mm = math.sin(math.pi - m1) * m1
 
     def forward(self, x, label):
-        # cos(theta)
+        # Compute cos(theta)
         cosine = F.linear(F.normalize(x), F.normalize(self.weight))
-        # cos(theta + m1)
+        # Compute cos(theta + m1)
         sine = torch.sqrt(1.0 - torch.pow(cosine, 2))
         phi = cosine * self.cos_m1 - sine * self.sin_m1
 
+        # Apply easy margin if specified
         if self.easy_margin:
             phi = torch.where(cosine > 0, phi, cosine)
         else:
             phi = torch.where((cosine - self.th) > 0, phi, cosine - self.mm)
 
-
+        # Convert label to one-hot encoding
         one_hot = torch.zeros_like(cosine)
         one_hot.scatter_(1, label.view(-1, 1), 1)
-        output = (one_hot * phi) + ((1.0 - one_hot) * cosine) # additive angular margin
-        output = output - one_hot * self.m2 # additive cosine margin
+        
+        # Calculate output with additive angular and cosine margins
+        output = (one_hot * phi) + ((1.0 - one_hot) * cosine)  # Additive angular margin
+        output = output - one_hot * self.m2  # Additive cosine margin
         output = output * self.s
 
         return output
 
 
 class CPDis(nn.Module):
-    """PatchGAN."""
+    """PatchGAN Discriminator."""
+    
     def __init__(self, image_size=256, conv_dim=64, repeat_num=3, norm='SN'):
         super(CPDis, self).__init__()
 
         layers = []
-        if norm == 'SN':
-            layers.append(spectral_norm(nn.Conv2d(3, conv_dim, kernel_size=4, stride=2, padding=1)))
-        else:
-            layers.append(nn.Conv2d(3, conv_dim, kernel_size=4, stride=2, padding=1))
+        # Initialize the first convolutional layer
+        layers.append(self._get_conv_layer(3, conv_dim, norm))
         layers.append(nn.LeakyReLU(0.01, inplace=True))
 
         curr_dim = conv_dim
         for i in range(1, repeat_num):
-            if norm == 'SN':
-                layers.append(spectral_norm(nn.Conv2d(curr_dim, curr_dim * 2, kernel_size=4, stride=2, padding=1)))
-            else:
-                layers.append(nn.Conv2d(curr_dim, curr_dim * 2, kernel_size=4, stride=2, padding=1))
+            layers.append(self._get_conv_layer(curr_dim, curr_dim * 2, norm))
             layers.append(nn.LeakyReLU(0.01, inplace=True))
-            curr_dim = curr_dim * 2
+            curr_dim *= 2
 
-        # k_size = int(image_size / np.power(2, repeat_num))
-        if norm == 'SN':
-            layers.append(spectral_norm(nn.Conv2d(curr_dim, curr_dim * 2, kernel_size=4, stride=1, padding=1)))
-        else:
-            layers.append(nn.Conv2d(curr_dim, curr_dim * 2, kernel_size=4, stride=1, padding=1))
+        # Final convolutional layer
+        layers.append(self._get_conv_layer(curr_dim, curr_dim * 2, norm, stride=1))
         layers.append(nn.LeakyReLU(0.01, inplace=True))
-        curr_dim = curr_dim * 2
+        curr_dim *= 2
 
         self.main = nn.Sequential(*layers)
-        if norm == 'SN':
-            self.conv1 = spectral_norm(nn.Conv2d(curr_dim, 1, kernel_size=4, stride=1, padding=1, bias=False))
-        else:
-            self.conv1 = nn.Conv2d(curr_dim, 1, kernel_size=4, stride=1, padding=1, bias=False)
+        self.conv1 = self._get_conv_layer(curr_dim, 1, norm, bias=False)
+
+    def _get_conv_layer(self, in_channels, out_channels, norm, stride=2, padding=1, kernel_size=4, bias=True):
+        """Helper function to create a convolutional layer with optional spectral normalization."""
+        conv_layer = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding, bias=bias)
+        return spectral_norm(conv_layer) if norm == 'SN' else conv_layer
 
     def forward(self, x):
         if x.ndim == 5:
             x = x.squeeze(0)
         assert x.ndim == 4, x.ndim
         h = self.main(x)
-        # out_real = self.conv1(h)
         out_makeup = self.conv1(h)
-        # return out_real.squeeze(), out_makeup.squeeze()
         return out_makeup
 
 
 class CPDis_cls(nn.Module):
-    """PatchGAN."""
+    """PatchGAN Discriminator with Classification."""
+    
     def __init__(self, image_size=256, conv_dim=64, repeat_num=3, norm='SN'):
         super(CPDis_cls, self).__init__()
 
         layers = []
-        if norm == 'SN':
-            layers.append(spectral_norm(nn.Conv2d(3, conv_dim, kernel_size=4, stride=2, padding=1)))
-        else:
-            layers.append(nn.Conv2d(3, conv_dim, kernel_size=4, stride=2, padding=1))
+        # Initialize the first convolutional layer
+        layers.append(self._get_conv_layer(3, conv_dim, norm))
         layers.append(nn.LeakyReLU(0.01, inplace=True))
 
         curr_dim = conv_dim
         for i in range(1, repeat_num):
-            if norm == 'SN':
-                layers.append(spectral_norm(nn.Conv2d(curr_dim, curr_dim * 2, kernel_size=4, stride=2, padding=1)))
-            else:
-                layers.append(nn.Conv2d(curr_dim, curr_dim * 2, kernel_size=4, stride=2, padding=1))
+            layers.append(self._get_conv_layer(curr_dim, curr_dim * 2, norm))
             layers.append(nn.LeakyReLU(0.01, inplace=True))
-            curr_dim = curr_dim * 2
+            curr_dim *= 2
 
-        # k_size = int(image_size / np.power(2, repeat_num))
-        if norm == 'SN':
-            layers.append(spectral_norm(nn.Conv2d(curr_dim, curr_dim * 2, kernel_size=4, stride=1, padding=1)))
-        else:
-            layers.append(nn.Conv2d(curr_dim, curr_dim * 2, kernel_size=4, stride=1, padding=1))
+        # Final convolutional layer
+        layers.append(self._get_conv_layer(curr_dim, curr_dim * 2, norm, stride=1))
         layers.append(nn.LeakyReLU(0.01, inplace=True))
-        curr_dim = curr_dim * 2
+        curr_dim *= 2
 
         self.main = nn.Sequential(*layers)
-        if norm == 'SN':
-            self.conv1 = spectral_norm(nn.Conv2d(curr_dim, 1, kernel_size=4, stride=1, padding=1, bias=False))
-            self.classifier_pool = nn.AdaptiveAvgPool2d(1)
-            self.classifier_conv = nn.Conv2d(512, 512, 1, 1, 0)
-            self.classifier = MarginCosineProduct(512,7)#ArcMarginProduct(512, 7)
-            print("Using Large Margin Cosine Loss.")
+        self.conv1 = self._get_conv_layer(curr_dim, 1, norm, bias=False)
+        self.classifier_pool = nn.AdaptiveAvgPool2d(1)
+        self.classifier_conv = nn.Conv2d(512, 512, 1, 1, 0)
+        self.classifier = MarginCosineProduct(512, 7)  # Using Large Margin Cosine Loss
+        print("Using Large Margin Cosine Loss.")
 
-        else:
-            self.conv1 = nn.Conv2d(curr_dim, 1, kernel_size=4, stride=1, padding=1, bias=False)
+    def _get_conv_layer(self, in_channels, out_channels, norm, stride=2, padding=1, kernel_size=4, bias=True):
+        """Helper function to create a convolutional layer with optional spectral normalization."""
+        conv_layer = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding, bias=bias)
+        return spectral_norm(conv_layer) if norm == 'SN' else conv_layer
 
     def forward(self, x, label):
         if x.ndim == 5:
             x = x.squeeze(0)
         assert x.ndim == 4, x.ndim
-        h = self.main(x)  # ([1, 512, 31, 31])
-        #print(out_cls.shape)
+        h = self.main(x)  # Shape: ([1, 512, 31, 31])
         out_cls = self.classifier_pool(h)
-        #print(out_cls.shape)
         out_cls = self.classifier_conv(out_cls)
-        #print(out_cls.shape)
-        out_cls = torch.squeeze(out_cls, -1)
-        out_cls = torch.squeeze(out_cls, -1)
+        out_cls = out_cls.squeeze(-1).squeeze(-1)  # Remove last two dimensions
         out_cls = self.classifier(out_cls, label)
-        out_makeup = self.conv1(h)  # torch.Size([1, 1, 30, 30])
-        # return out_real.squeeze(), out_makeup.squeeze()
+        out_makeup = self.conv1(h)  # Shape: ([1, 1, 30, 30])
         return out_makeup, out_cls
 
 class SpectralNorm(object):
     def __init__(self):
         self.name = "weight"
-        # print(self.name)
         self.power_iterations = 1
 
     def compute_weight(self, module):
@@ -249,7 +233,8 @@ class SpectralNorm(object):
         for _ in range(self.power_iterations):
             v.data = l2normalize(torch.mv(torch.t(w.view(height, -1).data), u.data))
             u.data = l2normalize(torch.mv(w.view(height, -1).data, v.data))
-        # sigma = torch.dot(u.data, torch.mv(w.view(height,-1).data, v.data))
+
+        # Calculate the spectral norm
         sigma = u.dot(w.view(height, -1).mv(v))
         return w / sigma.expand_as(w)
 
@@ -259,10 +244,12 @@ class SpectralNorm(object):
         fn = SpectralNorm()
 
         try:
+            # Check if parameters already exist
             u = getattr(module, name + "_u")
             v = getattr(module, name + "_v")
             w = getattr(module, name + "_bar")
         except AttributeError:
+            # Initialize parameters if they do not exist
             w = getattr(module, name)
             height = w.data.shape[0]
             width = w.view(height, -1).data.shape[1]
@@ -270,18 +257,17 @@ class SpectralNorm(object):
             v = Parameter(w.data.new(width).normal_(0, 1), requires_grad=False)
             w_bar = Parameter(w.data)
 
-            # del module._parameters[name]
-
             module.register_parameter(name + "_u", u)
             module.register_parameter(name + "_v", v)
             module.register_parameter(name + "_bar", w_bar)
 
-        # remove w from parameter list
+        # Remove original weight from parameter list
         del module._parameters[name]
 
+        # Compute and set the new weight
         setattr(module, name, fn.compute_weight(module))
 
-        # recompute weight before every forward()
+        # Recompute weight before every forward pass
         module.register_forward_pre_hook(fn)
 
         return fn
@@ -297,11 +283,15 @@ class SpectralNorm(object):
     def __call__(self, module, inputs):
         setattr(module, self.name, self.compute_weight(module))
 
+
 def spectral_norm(module):
+    """Apply spectral normalization to a module."""
     SpectralNorm.apply(module)
     return module
 
+
 def remove_spectral_norm(module):
+    """Remove spectral normalization from a module."""
     name = 'weight'
     for k, hook in module._forward_pre_hooks.items():
         if isinstance(hook, SpectralNorm) and hook.name == name:
@@ -309,5 +299,4 @@ def remove_spectral_norm(module):
             del module._forward_pre_hooks[k]
             return module
 
-    raise ValueError("spectral_norm of '{}' not found in {}"
-                     .format(name, module))
+    raise ValueError(f"spectral_norm of '{name}' not found in {module}")
