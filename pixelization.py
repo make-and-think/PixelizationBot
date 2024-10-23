@@ -1,3 +1,4 @@
+import gc
 import sys
 import os
 import logging
@@ -121,6 +122,10 @@ class PixelizationModel:
         logger.info("Unload models...")
         del self.G_A_net
         del self.alias_net
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         self.G_A_net = None
         self.alias_net = None
 
