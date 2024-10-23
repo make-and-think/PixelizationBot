@@ -93,6 +93,8 @@ class QueueProcessor:
         self.queue = []
         self.qsize = 0
         self.times_history = []
+        self.model_worker = PixelizationModel()
+        self.model_worker.load()
 
     async def add_task(self, event):
         self.qsize += 1
@@ -102,6 +104,7 @@ class QueueProcessor:
         logger.info(f"Task added for processing image: {event.photo}")  # Logging
 
     async def loop(self):
+
         while True:
             if not self.queue:
                 await asyncio.sleep(1)
@@ -111,34 +114,36 @@ class QueueProcessor:
             task.start_ts = time.time()
 
             try:
-                img_byte_arr = io.BytesIO()
+                input_image_bytes = io.BytesIO()
                 logger.info(
-                    f"Downloading image: ID={task.event.photo.id}, Access Hash={task.event.photo.access_hash}, Date={task.event.photo.date}, Sizes={[(size.type, size.w, size.h) for size in task.event.photo.sizes]}")
-                await bot.download_media(task.event.photo, file=img_byte_arr)
+                    f"Downloading image: ID={task.event.photo.id}, \
+                    Access Hash={task.event.photo.access_hash}, \
+                    Date={task.event.photo.date}, \
+                    Sizes={[(size.type, size.w, size.h) for size in task.event.photo.sizes]}")
 
-                img_byte_arr.seek(0)
-                original_img = Image.open(img_byte_arr)
+                await bot.download_media(task.event.photo, file=input_image_bytes)
 
-                model = PixelizationModel()
-                model.load()
+                input_image_bytes.seek(0)
+                original_img = Image.open(input_image_bytes)
 
-                processed_img = model.pixelize(original_img, task.pixel_size, upscale_after=True, copy_hue=True,
-                                               copy_sat=True)
-
-                img_byte_arr = io.BytesIO()
-                processed_img.save(img_byte_arr, format='PNG')
-                img_byte_arr.seek(0)
-
-                img_byte_arr.name = 'processed_image.png'
+                processed_img = self.model_worker.pixelize(original_img, task.pixel_size,
+                                                           upscale_after=True, copy_hue=True, copy_sat=True)
+                output_image = io.BytesIO()
+                processed_img.save(output_image, format='PNG')
+                output_image.seek(0)
+                output_image.name = 'processed_image.png'
 
                 logger.info(f"Image processed successfully.")
 
                 await bot.send_file(
                     task.event.chat_id,
-                    img_byte_arr,
-                    filename=img_byte_arr.name,
+                    output_image,
+                    filename=output_image.name,
                     force_document=True
                 )
+
+                del original_img
+                del output_image
             except Exception as e:
                 logger.error(f'Error processing task: {e}')
                 task.error = True

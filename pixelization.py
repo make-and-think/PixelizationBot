@@ -1,11 +1,11 @@
 import sys
 import os
 import logging
+from PIL import Image
 import numpy as np
 import torch
 import torchvision.transforms as transforms
 import colorsys
-from PIL import Image
 from typing.io import BinaryIO
 
 from models.logic.networks import define_G
@@ -46,10 +46,10 @@ class PixelizationModel:
         self.ref_t = None
 
     @staticmethod
-    def process(img, pixel_size=4):
-        img = img.resize((img.width * 4 // pixel_size, img.height * 4 // pixel_size))
+    def process(input_img: Image, pixel_size=4) -> torch.Tensor:
+        input_img = input_img.resize((input_img.width * 4 // pixel_size, input_img.height * 4 // pixel_size))
 
-        ow, oh = img.size
+        ow, oh = input_img.size
         nw = int(round(ow / 4) * 4)
         nh = int(round(oh / 4) * 4)
 
@@ -58,14 +58,14 @@ class PixelizationModel:
         right = left + nw
         bottom = top + nh
 
-        img = img.crop((left, top, right, bottom))
+        input_img = input_img.crop((left, top, right, bottom))
 
-        trans = transforms.Compose([
+        transformer = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
         ])
 
-        return trans(img)[None, :, :, :]
+        return transformer(input_img)[None, :, :, :]
 
     @staticmethod
     def rgb_to_hsv_array(rgb):
@@ -80,7 +80,7 @@ class PixelizationModel:
         model.load_state_dict(state_dict, strict=False)
         return model
 
-    def color_image(self, img, original_img, copy_hue, copy_sat):
+    def color_image(self, img: Image.Image, original_img: Image.Image, copy_hue, copy_sat):
         """copy original hue and saturation"""
         img = img.convert("RGB")
         original_img = original_img.convert("RGB")
@@ -122,6 +122,7 @@ class PixelizationModel:
         with torch.no_grad():
             self.G_A_net = define_G(3, 3, 64, "c2pGen", "instance", False, "normal", 0.02,
                                     [0] if torch.cuda.is_available() else [])
+
             self.alias_net = define_G(3, 3, 64, "antialias", "instance", False, "normal", 0.02,
                                       [0] if torch.cuda.is_available() else [])
 
@@ -139,13 +140,15 @@ class PixelizationModel:
 
         logger.info("Models loaded successfully")
 
-    def pixelize(self, in_img, pixel_size=4, upscale_after=True, copy_hue=False, copy_sat=False):
+    def pixelize(self, input_img: Image.Image, pixel_size=4, upscale_after=True, copy_hue=False,
+                 copy_sat=False) -> Image.Image:
         logger.info(f"Pixelizing image with pixel size {pixel_size}")
         with torch.no_grad():
-            original_img = in_img.convert('RGB')
+            original_img = input_img.convert('RGB')
             in_t = self.process(original_img, pixel_size).to(self.device)
             out_t = self.alias_net(self.G_A_net(in_t, self.ref_t))
 
+        logger.info("Start start to_image")
         return self.to_image(out_t, pixel_size, upscale_after, original_img, copy_hue, copy_sat)
 
 
