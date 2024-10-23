@@ -142,8 +142,6 @@ class QueueProcessor:
                     force_document=True
                 )
 
-                del original_img
-                del output_image
             except Exception as e:
                 logger.error(f'Error processing task: {e}')
                 task.error = True
