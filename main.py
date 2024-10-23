@@ -12,7 +12,7 @@ from telethon import TelegramClient, events, functions
 from telethon.tl.types import BotCommand, BotCommandScopeDefault
 from telethon.tl.functions.bots import SetBotCommandsRequest
 from pixelization import PixelizationModel
-from PIL import Image
+from PIL import Image  # nah u to lazy to replace by wand
 
 from config.config import config
 
@@ -26,6 +26,7 @@ logging.basicConfig(level=logging.INFO,
                         logging.StreamHandler()
                     ])
 logger = logging.getLogger(__name__)
+
 
 class AsyncTempFile:
     def __init__(self, ext=''):
@@ -42,6 +43,7 @@ class AsyncTempFile:
 
     async def write(self, data):
         await self.fd.write(data)
+
 
 class Task:
     def __init__(self, event, queue_n):
@@ -85,6 +87,7 @@ class Task:
         except Exception as e:
             print(f'Error updating message: {e}')
 
+
 class QueueProcessor:
     def __init__(self):
         self.queue = []
@@ -109,7 +112,8 @@ class QueueProcessor:
 
             try:
                 img_byte_arr = io.BytesIO()
-                logger.info(f"Downloading image: ID={task.event.photo.id}, Access Hash={task.event.photo.access_hash}, Date={task.event.photo.date}, Sizes={[(size.type, size.w, size.h) for size in task.event.photo.sizes]}")
+                logger.info(
+                    f"Downloading image: ID={task.event.photo.id}, Access Hash={task.event.photo.access_hash}, Date={task.event.photo.date}, Sizes={[(size.type, size.w, size.h) for size in task.event.photo.sizes]}")
                 await bot.download_media(task.event.photo, file=img_byte_arr)
 
                 img_byte_arr.seek(0)
@@ -118,7 +122,8 @@ class QueueProcessor:
                 model = PixelizationModel()
                 model.load()
 
-                processed_img = model.pixelize(original_img, task.pixel_size, upscale_after=True, copy_hue=True, copy_sat=True)
+                processed_img = model.pixelize(original_img, task.pixel_size, upscale_after=True, copy_hue=True,
+                                               copy_sat=True)
 
                 img_byte_arr = io.BytesIO()
                 processed_img.save(img_byte_arr, format='PNG')
@@ -147,6 +152,7 @@ class QueueProcessor:
                 for remaining_task in self.queue:
                     await remaining_task.update_message(-1)
 
+
 bot = TelegramClient(
     'pixelization',
     config.API_ID,
@@ -154,6 +160,7 @@ bot = TelegramClient(
 ).start(bot_token=config.API_TOKEN)
 
 processor = QueueProcessor()
+
 
 async def set_bot_commands():
     commands = [
@@ -164,6 +171,7 @@ async def set_bot_commands():
 
     await bot(SetBotCommandsRequest(scope=BotCommandScopeDefault(), lang_code=lang_code, commands=commands))
 
+
 @bot.on(events.NewMessage)
 async def on_message(event):
     if not event.photo:
@@ -171,9 +179,11 @@ async def on_message(event):
         return
     await processor.add_task(event)
 
+
 @bot.on(events.NewMessage(pattern='/start'))
 async def handle_start_command(event):
     await event.respond("Hello! Here are the available commands:\n/start - show available commands\n/help - get help.")
+
 
 @bot.on(events.NewMessage(pattern='/help'))
 async def help_message(event):
@@ -184,10 +194,12 @@ async def help_message(event):
     )
     await event.reply(help_text)
 
+
 async def main():
     logger.info("Starting the main bot loop")  # Logging
     bot.loop.create_task(processor.loop())
     await bot.run_until_disconnected()
+
 
 if __name__ == '__main__':
     with bot:

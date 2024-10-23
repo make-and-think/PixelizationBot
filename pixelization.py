@@ -6,12 +6,16 @@ import torch
 import torchvision.transforms as transforms
 import colorsys
 from PIL import Image
+from typing.io import BinaryIO
+
 from models.logic.networks import define_G
 
+# TODO move to config
 NETG_PATH = "models/160_net_G_A.pth"
 ALIASNET_PATH = "models/alias_net.pth"
 REFERENCE_PATH = "reference.png"
 
+# TODO MOVE to config file
 logging.basicConfig(
     level=logging.INFO,
     format='[%(asctime)s] %(levelname)s - %(message)s',
@@ -23,106 +27,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def get_device():
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    logger.info(f"Using device: {device}")
-    return device
-
-
-def load_model_weights(model, weights_path, device):
-    logger.info(f"Loading model weights from: {weights_path}")
-    state_dict = torch.load(weights_path, map_location=device, weights_only=True)
-    model.load_state_dict(state_dict, strict=False)
-    return model
-
-
-def greyscale(img):
-    gray = np.array(img.convert('L'))
-    tmp = np.expand_dims(gray, axis=2)
-    tmp = np.concatenate((tmp, tmp, tmp), axis=-1)
-    return Image.fromarray(tmp)
-
-
-def process(img, pixel_size=4):
-    img = img.resize((img.width * 4 // pixel_size, img.height * 4 // pixel_size))
-
-    ow, oh = img.size
-    nw = int(round(ow / 4) * 4)
-    nh = int(round(oh / 4) * 4)
-
-    left = (ow - nw) // 2
-    top = (oh - nh) // 2
-    right = left + nw
-    bottom = top + nh
-
-    img = img.crop((left, top, right, bottom))
-
-    trans = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-    ])
-
-    return trans(img)[None, :, :, :]
-
-
-def rgb_to_hsv_array(rgb):
-    r, g, b = rgb[..., 0] / 255.0, rgb[..., 1] / 255.0, rgb[..., 2] / 255.0
-    hsv = np.array([colorsys.rgb_to_hsv(r[i], g[i], b[i]) for i in range(len(r))])
-    return hsv
-
-
-def hsv_to_rgb_array(hsv):
-    rgb = np.array([colorsys.hsv_to_rgb(h, s, v) for h, s, v in hsv])
-    return (rgb * 255).astype(np.uint8)
-
-
-# copy original hue and saturation
-def color_image(img, original_img, copy_hue, copy_sat):
-    img = img.convert("RGB")
-    original_img = original_img.convert("RGB")
-
-    img_data = np.array(img)
-    original_data = np.array(original_img)
-
-    original_hsv = rgb_to_hsv_array(original_data.reshape(-1, 3))
-    img_hsv = rgb_to_hsv_array(img_data.reshape(-1, 3))
-
-    if copy_hue:
-        img_hsv[:, 0] = original_hsv[:, 0]
-    if copy_sat:
-        img_hsv[:, 1] = original_hsv[:, 1]
-
-    img_data = hsv_to_rgb_array(img_hsv).reshape(img_data.shape)
-
-    return Image.fromarray(img_data)
-
-
-def to_image(tensor, pixel_size, upscale_after, original_img, copy_hue, copy_sat):
-    img = tensor.squeeze().cpu().numpy()
-    img = ((img + 1) / 2 * 255).astype(np.uint8)
-    img = np.transpose(img, (1, 2, 0))
-    img = Image.fromarray(img)
-    img = img.resize((img.width // 4, img.height // 4), resample=Image.Resampling.NEAREST)
-
-    if copy_hue or copy_sat:
-        original_img = original_img.resize(img.size, resample=Image.Resampling.NEAREST)
-        img = color_image(img, original_img, copy_hue, copy_sat)
-
-    if upscale_after:
-        img = img.resize((img.width * pixel_size, img.height * pixel_size), resample=Image.Resampling.NEAREST)
-
-    return img
-
-
-def save(tensor, file, pixel_size=4, upscale_after=True, original_img=None, copy_hue=False, copy_sat=False):
-    img = to_image(tensor, pixel_size, upscale_after, original_img, copy_hue, copy_sat)
-    img.save(file)
-    logger.info(f"Image saved to {file}")
+# def save(tensor, file: BinaryIO, pixel_size=4, upscale_after=True, original_img=None, copy_hue=False, copy_sat=False):
+#     img = to_image(tensor, pixel_size, upscale_after, original_img, copy_hue, copy_sat)
+#     img.save(file)
+#     logger.info(f"Image saved to {file}")
 
 
 class PixelizationModel:
     def __init__(self, netG_path=NETG_PATH, aliasnet_path=ALIASNET_PATH, reference_path=REFERENCE_PATH):
-        self.device = get_device()
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        logger.info(f"Using device: {self.device}")
+
         self.netG_path = netG_path
         self.aliasnet_path = aliasnet_path
         self.reference_path = reference_path
@@ -130,17 +45,97 @@ class PixelizationModel:
         self.alias_net = None
         self.ref_t = None
 
+    @staticmethod
+    def process(img, pixel_size=4):
+        img = img.resize((img.width * 4 // pixel_size, img.height * 4 // pixel_size))
+
+        ow, oh = img.size
+        nw = int(round(ow / 4) * 4)
+        nh = int(round(oh / 4) * 4)
+
+        left = (ow - nw) // 2
+        top = (oh - nh) // 2
+        right = left + nw
+        bottom = top + nh
+
+        img = img.crop((left, top, right, bottom))
+
+        trans = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+        ])
+
+        return trans(img)[None, :, :, :]
+
+    @staticmethod
+    def rgb_to_hsv_array(rgb):
+        r, g, b = rgb[..., 0] / 255.0, rgb[..., 1] / 255.0, rgb[..., 2] / 255.0
+        hsv = np.array([colorsys.rgb_to_hsv(r[i], g[i], b[i]) for i in range(len(r))])
+        return hsv
+
+    @staticmethod
+    def load_model_weights(model, weights_path, device):
+        logger.info(f"Loading model weights from: {weights_path}")
+        state_dict = torch.load(weights_path, map_location=device, weights_only=True)
+        model.load_state_dict(state_dict, strict=False)
+        return model
+
+    def color_image(self, img, original_img, copy_hue, copy_sat):
+        """copy original hue and saturation"""
+        img = img.convert("RGB")
+        original_img = original_img.convert("RGB")
+
+        img_data = np.array(img)
+        original_data = np.array(original_img)
+
+        original_hsv = self.rgb_to_hsv_array(original_data.reshape(-1, 3))
+        img_hsv = self.rgb_to_hsv_array(img_data.reshape(-1, 3))
+
+        if copy_hue:
+            img_hsv[:, 0] = original_hsv[:, 0]
+        if copy_sat:
+            img_hsv[:, 1] = original_hsv[:, 1]
+
+        rgb = np.array([colorsys.hsv_to_rgb(h, s, v) for h, s, v in img_hsv])
+        img_data = (rgb * 255).astype(np.uint8).reshape(img_data.shape)
+
+        return Image.fromarray(img_data)
+
+    def to_image(self, tensor, pixel_size, upscale_after, original_img, copy_hue, copy_sat):
+        img = tensor.squeeze().cpu().numpy()
+        img = ((img + 1) / 2 * 255).astype(np.uint8)
+        img = np.transpose(img, (1, 2, 0))
+        img = Image.fromarray(img)
+        img = img.resize((img.width // 4, img.height // 4), resample=Image.Resampling.NEAREST)
+
+        if copy_hue or copy_sat:
+            original_img = original_img.resize(img.size, resample=Image.Resampling.NEAREST)
+            img = self.color_image(img, original_img, copy_hue, copy_sat)
+
+        if upscale_after:
+            img = img.resize((img.width * pixel_size, img.height * pixel_size), resample=Image.Resampling.NEAREST)
+
+        return img
+
     def load(self):
         logger.info("Loading models...")
         with torch.no_grad():
-            self.G_A_net = define_G(3, 3, 64, "c2pGen", "instance", False, "normal", 0.02, [0] if torch.cuda.is_available() else [])
-            self.alias_net = define_G(3, 3, 64, "antialias", "instance", False, "normal", 0.02, [0] if torch.cuda.is_available() else [])
+            self.G_A_net = define_G(3, 3, 64, "c2pGen", "instance", False, "normal", 0.02,
+                                    [0] if torch.cuda.is_available() else [])
+            self.alias_net = define_G(3, 3, 64, "antialias", "instance", False, "normal", 0.02,
+                                      [0] if torch.cuda.is_available() else [])
 
-            self.G_A_net = load_model_weights(self.G_A_net, self.netG_path, self.device)
-            self.alias_net = load_model_weights(self.alias_net, self.aliasnet_path, self.device)
+            self.G_A_net = self.load_model_weights(self.G_A_net, self.netG_path, self.device)
+            self.alias_net = self.load_model_weights(self.alias_net, self.aliasnet_path, self.device)
 
             ref_img = Image.open(self.reference_path).convert('L')
-            self.ref_t = process(greyscale(ref_img)).to(self.device)
+
+            gray = np.array(ref_img.convert('L'))
+            gray_tmp = np.expand_dims(gray, axis=2)
+            gray_tmp = np.concatenate((gray_tmp, gray_tmp, gray_tmp), axis=-1)
+            greyscale_image = Image.fromarray(gray_tmp)
+
+            self.ref_t = self.process(greyscale_image).to(self.device)
 
         logger.info("Models loaded successfully")
 
@@ -148,16 +143,16 @@ class PixelizationModel:
         logger.info(f"Pixelizing image with pixel size {pixel_size}")
         with torch.no_grad():
             original_img = in_img.convert('RGB')
-            in_t = process(original_img, pixel_size).to(self.device)
-
+            in_t = self.process(original_img, pixel_size).to(self.device)
             out_t = self.alias_net(self.G_A_net(in_t, self.ref_t))
 
-            return to_image(out_t, pixel_size, upscale_after, original_img, copy_hue, copy_sat)
+        return self.to_image(out_t, pixel_size, upscale_after, original_img, copy_hue, copy_sat)
 
 
 def main():
     if len(sys.argv) < 4:
-        logger.error("Usage: python pixelization.py <input_image> <output_image> <pixel_size> [--upscale-after] [--copy-hue] [--copy-sat]")
+        logger.error(
+            "Usage: python pixelization.py <input_image> <output_image> <pixel_size> [--upscale-after] [--copy-hue] [--copy-sat]")
         sys.exit(1)
 
     input_image = sys.argv[1]
@@ -181,6 +176,7 @@ def main():
 
     processed_img.save(output_image)
     logger.info(f"Image saved to {output_image}")
+
 
 if __name__ == "__main__":
     main()
