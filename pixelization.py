@@ -119,9 +119,10 @@ class PixelizationModel:
 
     def unload(self):
         logger.info("Unload models...")
+        del self.G_A_net
+        del self.alias_net
         self.G_A_net = None
         self.alias_net = None
-        pass
 
     def load(self):
         logger.info("Loading models...")
