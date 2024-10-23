@@ -117,6 +117,12 @@ class PixelizationModel:
 
         return img
 
+    def unload(self):
+        logger.info("Unload models...")
+        self.G_A_net = None
+        self.alias_net = None
+        pass
+
     def load(self):
         logger.info("Loading models...")
         with torch.no_grad():

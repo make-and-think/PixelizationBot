@@ -125,9 +125,9 @@ class QueueProcessor:
 
                 input_image_bytes.seek(0)
                 original_img = Image.open(input_image_bytes)
-
                 processed_img = self.model_worker.pixelize(original_img, task.pixel_size,
                                                            upscale_after=True, copy_hue=True, copy_sat=True)
+
                 output_image = io.BytesIO()
                 processed_img.save(output_image, format='PNG')
                 output_image.seek(0)
@@ -141,7 +141,8 @@ class QueueProcessor:
                     filename=output_image.name,
                     force_document=True
                 )
-
+                self.model_worker.unload()
+                self.model_worker.load()
             except Exception as e:
                 logger.error(f'Error processing task: {e}')
                 task.error = True
