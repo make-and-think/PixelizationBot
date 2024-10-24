@@ -40,6 +40,7 @@ class PixelizationModel:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         if config.__dict__.get("force_use_cpu"):
             self.device = torch.device("cpu")
+            torch.cpu.set_device()
 
         logger.info(f"Using device: {self.device}")
 
@@ -137,10 +138,10 @@ class PixelizationModel:
         logger.info("Loading models...")
         with torch.no_grad():
             self.G_A_net = define_G(3, 3, 64, "c2pGen", "instance", False, "normal", 0.02,
-                                    [0] if str(torch.device("cpu")) == "cuda" else [])
+                                    [0] if str(self.device) == "cuda" else [])
 
             self.alias_net = define_G(3, 3, 64, "antialias", "instance", False, "normal", 0.02,
-                                      [0] if str(torch.device("cpu")) == "cuda" else [])
+                                      [0] if str(self.device) == "cuda" else [])
 
             self.G_A_net = self.load_model_weights(self.G_A_net, self.netG_path, self.device)
             self.alias_net = self.load_model_weights(self.alias_net, self.aliasnet_path, self.device)
