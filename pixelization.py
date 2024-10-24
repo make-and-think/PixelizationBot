@@ -39,7 +39,7 @@ class PixelizationModel:
     def __init__(self, netG_path=NETG_PATH, aliasnet_path=ALIASNET_PATH, reference_path=REFERENCE_PATH):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         if config.__dict__.get("force_use_cpu"):
-            self.device = "cpu"
+            self.device = torch.device("cpu")
 
         logger.info(f"Using device: {self.device}")
 
