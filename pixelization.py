@@ -160,10 +160,12 @@ class PixelizationModel:
     def pixelize(self, input_img: Image.Image, pixel_size=4, upscale_after=True, copy_hue=False,
                  copy_sat=False) -> Image.Image:
         logger.info(f"Pixelizing image with pixel size {pixel_size}")
-        with torch.no_grad():
-            original_img = input_img.convert('RGB')
-            in_t = self.process(original_img, pixel_size).to(self.device)
-            out_t = self.alias_net(self.G_A_net(in_t, self.ref_t))
+
+        with self.device:
+            with torch.no_grad():
+                original_img = input_img.convert('RGB')
+                in_t = self.process(original_img, pixel_size).to(self.device)
+                out_t = self.alias_net(self.G_A_net(in_t, self.ref_t))
 
         logger.info("Start start to_image")
         return self.to_image(out_t, pixel_size, upscale_after, original_img, copy_hue, copy_sat)
