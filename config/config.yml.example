@@ -1,3 +1,4 @@
 API_TOKEN: ''
 API_ID: 
 API_HASH: ''
+force_use_cpu: false

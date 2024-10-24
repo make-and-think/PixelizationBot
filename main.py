@@ -179,6 +179,7 @@ async def set_bot_commands():
 
 @bot.on(events.NewMessage)
 async def on_message(event):
+    #TODO limit requests per user
     if not event.photo:
         await event.reply('Please provide an image to pixelate.')
         return

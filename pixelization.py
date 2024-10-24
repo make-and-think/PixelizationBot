@@ -10,6 +10,7 @@ import colorsys
 from typing.io import BinaryIO
 
 from models.logic.networks import define_G
+from config.config import config
 
 # TODO move to config
 NETG_PATH = "models/160_net_G_A.pth"
@@ -37,6 +38,9 @@ logger = logging.getLogger(__name__)
 class PixelizationModel:
     def __init__(self, netG_path=NETG_PATH, aliasnet_path=ALIASNET_PATH, reference_path=REFERENCE_PATH):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if config.__dict__.get("force_use_cpu"):
+            self.device = "cpu"
+
         logger.info(f"Using device: {self.device}")
 
         self.netG_path = netG_path
