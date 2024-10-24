@@ -135,10 +135,10 @@ class PixelizationModel:
         logger.info("Loading models...")
         with torch.no_grad():
             self.G_A_net = define_G(3, 3, 64, "c2pGen", "instance", False, "normal", 0.02,
-                                    [0] if self.device == "cuda" else [])
+                                    [0] if torch.cuda.is_available() else [])
 
             self.alias_net = define_G(3, 3, 64, "antialias", "instance", False, "normal", 0.02,
-                                      [0] if self.device == "cuda" else [])
+                                      [0] if torch.cuda.is_available() else [])
 
             self.G_A_net = self.load_model_weights(self.G_A_net, self.netG_path, self.device)
             self.alias_net = self.load_model_weights(self.alias_net, self.aliasnet_path, self.device)
