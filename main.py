@@ -104,7 +104,7 @@ class QueueProcessor:
         logger.info(f"Task added for processing image: {event.photo}")  # Logging
 
     async def loop(self):
-
+        #Todo change to model load/unload semaphore control
         while True:
             if not self.queue:
                 await asyncio.sleep(1)
@@ -141,8 +141,6 @@ class QueueProcessor:
                     filename=output_image.name,
                     force_document=True
                 )
-                self.model_worker.unload()
-                self.model_worker.load()
             except Exception as e:
                 logger.error(f'Error processing task: {e}')
                 task.error = True
@@ -155,6 +153,9 @@ class QueueProcessor:
                 await task.update_message(-1)
                 for remaining_task in self.queue:
                     await remaining_task.update_message(-1)
+            # If we get error we anyway unload and load model
+            self.model_worker.unload()
+            self.model_worker.load()
 
 
 bot = TelegramClient(
