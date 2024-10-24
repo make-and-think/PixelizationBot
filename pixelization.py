@@ -40,7 +40,7 @@ class PixelizationModel:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         if config.__dict__.get("force_use_cpu"):
             self.device = torch.device("cpu")
-            torch.cpu.set_device()
+            torch.cpu.set_device(self.device)
 
         logger.info(f"Using device: {self.device}")
 
