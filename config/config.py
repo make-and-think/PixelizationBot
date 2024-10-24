@@ -1,6 +1,6 @@
 from yaml import load
 from yaml import Loader
-
+import os
 
 class Config:
     #TODO make dynaconf
@@ -11,3 +11,7 @@ class Config:
 with open('config/config.yml') as f:
     config = load(f, Loader=Loader)
     config = Config(config)
+    if config.__dict__.get("force_use_cpu"):
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""
+
+

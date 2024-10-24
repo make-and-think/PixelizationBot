@@ -38,8 +38,6 @@ logger = logging.getLogger(__name__)
 class PixelizationModel:
     def __init__(self, netG_path=NETG_PATH, aliasnet_path=ALIASNET_PATH, reference_path=REFERENCE_PATH):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        if config.__dict__.get("force_use_cpu"):
-            self.device = torch.device("cpu")
 
         logger.info(f"Using device: {self.device}")
 
@@ -137,10 +135,10 @@ class PixelizationModel:
         logger.info("Loading models...")
         with torch.no_grad():
             self.G_A_net = define_G(3, 3, 64, "c2pGen", "instance", False, "normal", 0.02,
-                                    [0] if str(self.device) == "cuda" else [])
+                                    [0] if self.device == "cuda" else [])
 
             self.alias_net = define_G(3, 3, 64, "antialias", "instance", False, "normal", 0.02,
-                                      [0] if str(self.device) == "cuda" else [])
+                                      [0] if self.device == "cuda" else [])
 
             self.G_A_net = self.load_model_weights(self.G_A_net, self.netG_path, self.device)
             self.alias_net = self.load_model_weights(self.alias_net, self.aliasnet_path, self.device)
@@ -160,11 +158,10 @@ class PixelizationModel:
                  copy_sat=False) -> Image.Image:
         logger.info(f"Pixelizing image with pixel size {pixel_size}")
 
-        with self.device:
-            with torch.no_grad():
-                original_img = input_img.convert('RGB')
-                in_t = self.process(original_img, pixel_size).to(self.device)
-                out_t = self.alias_net(self.G_A_net(in_t, self.ref_t))
+        with torch.no_grad():
+            original_img = input_img.convert('RGB')
+            in_t = self.process(original_img, pixel_size).to(self.device)
+            out_t = self.alias_net(self.G_A_net(in_t, self.ref_t))
 
         logger.info("Start start to_image")
         return self.to_image(out_t, pixel_size, upscale_after, original_img, copy_hue, copy_sat)
