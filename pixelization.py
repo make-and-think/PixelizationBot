@@ -12,12 +12,11 @@ from typing.io import BinaryIO
 from models.logic.networks import define_G
 from config.config import config
 
-# TODO move to config
-NETG_PATH = "models/160_net_G_A.pth"
-ALIASNET_PATH = "models/alias_net.pth"
-REFERENCE_PATH = "reference.png"
+NETG_PATH = config.NETG_PATH
+ALIASNET_PATH = config.ALIASNET_PATH
+REFERENCE_PATH = config.REFERENCE_PATH
 
-torch.set_num_threads(2)
+torch.set_num_threads(config.NUM_THREADS)
 
 # TODO MOVE to config file
 logging.basicConfig(
