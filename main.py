@@ -179,12 +179,17 @@ async def set_bot_commands():
 
 @bot.on(events.NewMessage)
 async def on_message(event):
-    #TODO limit requests per user
-    #TODO selfmessage filter
-    if not event.photo:
-        await event.reply('Please provide an image to pixelate.')
-        return
-    await processor.add_task(event)
+
+    me = await bot.get_me()
+
+    # Проверка, что сообщение отправлено пользователем, а не ботом
+    if event.sender_id and event.sender_id != me.id:  # Используем sender_id
+        if not event.photo:
+            await event.reply('Please provide an image to pixelate.')
+            return
+        await processor.add_task(event)
+    else:
+        logger.info("Message from bot ignored.")  # Логирование игнорируемого сообщения
 
 
 @bot.on(events.NewMessage(pattern='/start'))

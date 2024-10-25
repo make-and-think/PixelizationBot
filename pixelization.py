@@ -17,6 +17,8 @@ NETG_PATH = "models/160_net_G_A.pth"
 ALIASNET_PATH = "models/alias_net.pth"
 REFERENCE_PATH = "reference.png"
 
+torch.set_num_threads(2)
+
 # TODO MOVE to config file
 logging.basicConfig(
     level=logging.INFO,
