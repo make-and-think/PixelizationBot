@@ -5,6 +5,8 @@ import logging
 import os
 import io
 import tempfile
+from concurrent.futures import ProcessPoolExecutor
+from functools import partial
 
 import aiofiles
 import aiofiles.os
@@ -95,6 +97,33 @@ class QueueProcessor:
         self.times_history = []
         self.model_worker = PixelizationModel()
         self.model_worker.load()
+        self.process_pool = ProcessPoolExecutor(max_workers=1)  # Создаем пул процессов
+
+    async def process_image(self, image_bytes, pixel_size):
+        # Выполняем обработку изображения в отдельном процессе
+        loop = asyncio.get_event_loop()
+        image_bytes.seek(0)
+        original_img = Image.open(image_bytes)
+        
+        process_func = partial(
+            self.model_worker.pixelize,
+            original_img,
+            pixel_size,
+            upscale_after=True,
+            copy_hue=True,
+            copy_sat=True
+        )
+        
+        processed_img = await loop.run_in_executor(
+            self.process_pool,
+            process_func
+        )
+        
+        output_image = io.BytesIO()
+        processed_img.save(output_image, format='PNG')
+        output_image.seek(0)
+        output_image.name = 'processed_image.png'
+        return output_image
 
     async def add_task(self, event):
         self.qsize += 1
@@ -123,17 +152,8 @@ class QueueProcessor:
 
                 await bot.download_media(task.event.photo, file=input_image_bytes)
 
-                input_image_bytes.seek(0)
-                original_img = Image.open(input_image_bytes)
-                processed_img = self.model_worker.pixelize(original_img, task.pixel_size,
-                                                           upscale_after=True, copy_hue=True, copy_sat=True)
-
-                output_image = io.BytesIO()
-                processed_img.save(output_image, format='PNG')
-                output_image.seek(0)
-                output_image.name = 'processed_image.png'
-
-                logger.info(f"Image processed successfully.")
+                # Обрабатываем изображение в отдельном процессе
+                output_image = await self.process_image(input_image_bytes, task.pixel_size)
 
                 await bot.send_file(
                     task.event.chat_id,
@@ -161,8 +181,9 @@ class QueueProcessor:
 bot = TelegramClient(
     'pixelization',
     config.API_ID,
-    config.API_HASH
-).start(bot_token=config.API_TOKEN)
+    config.API_HASH,
+    sequential_updates=True
+)
 
 processor = QueueProcessor()
 
@@ -213,9 +234,14 @@ async def main():
     await bot.run_until_disconnected()
 
 
+async def start_bot():
+    await bot.start(bot_token=config.API_TOKEN)
+
+
 if __name__ == '__main__':
     with bot:
         logger.info("Setting bot commands")  # Logging
         bot.loop.run_until_complete(set_bot_commands())
+        bot.loop.run_until_complete(start_bot())  # Сначала запускаем бота
         logger.info("Starting the bot")  # Logging
         bot.loop.run_until_complete(main())
