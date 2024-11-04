@@ -5,4 +5,4 @@ force_use_cpu: false
 NETG_PATH: "models/160_net_G_A.pth"
 ALIASNET_PATH: "models/alias_net.pth"
 REFERENCE_PATH: "reference.png"
-NUM_THREADS: 2
+NUM_PROCESS: 2

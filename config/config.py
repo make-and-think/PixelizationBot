@@ -14,6 +14,5 @@ with open('config/config.yml') as f:
     if config.__dict__.get("force_use_cpu"):
         os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
-    if hasattr(config, 'NUM_THREADS'):
-        import torch
-        torch.set_num_threads(config.NUM_THREADS)
+    import torch
+    torch.set_num_threads(1)

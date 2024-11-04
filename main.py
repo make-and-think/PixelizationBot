@@ -29,6 +29,8 @@ logging.basicConfig(level=logging.INFO,
                     ])
 logger = logging.getLogger(__name__)
 
+bot = TelegramClient('bot', config.API_ID, config.API_HASH)
+
 
 class AsyncTempFile:
     def __init__(self, ext=''):
@@ -97,14 +99,14 @@ class QueueProcessor:
         self.times_history = []
         self.model_worker = PixelizationModel()
         self.model_worker.load()
-        self.process_pool = ProcessPoolExecutor(max_workers=1)  # Создаем пул процессов
+        self.process_pool = ProcessPoolExecutor(max_workers=config.NUM_PROCESS)  # Создаем пул процессов
 
     async def process_image(self, image_bytes, pixel_size):
         # Выполняем обработку изображения в отдельном процессе
         loop = asyncio.get_event_loop()
         image_bytes.seek(0)
         original_img = Image.open(image_bytes)
-        
+
         process_func = partial(
             self.model_worker.pixelize,
             original_img,
@@ -113,12 +115,15 @@ class QueueProcessor:
             copy_hue=True,
             copy_sat=True
         )
-        
+        #
         processed_img = await loop.run_in_executor(
             self.process_pool,
             process_func
         )
-        
+
+        #processed_img = self.model_worker.pixelize(original_img,pixel_size,upscale_after=True,copy_hue=True,copy_sat=True)
+
+
         output_image = io.BytesIO()
         processed_img.save(output_image, format='PNG')
         output_image.seek(0)
@@ -133,12 +138,12 @@ class QueueProcessor:
         logger.info(f"Task added for processing image: {event.photo}")  # Logging
 
     async def loop(self):
-        #Todo change to model load/unload semaphore control
+        # Todo change to model load/unload semaphore control
         while True:
             if not self.queue:
                 await asyncio.sleep(1)
                 continue
-
+            logger.info("Start task")
             task = self.queue.pop(0)
             task.start_ts = time.time()
 
@@ -178,29 +183,21 @@ class QueueProcessor:
             self.model_worker.load()
 
 
-bot = TelegramClient(
-    'pixelization',
-    config.API_ID,
-    config.API_HASH,
-    sequential_updates=True
-)
-
 processor = QueueProcessor()
 
 
-async def set_bot_commands():
-    commands = [
-        BotCommand(command='start', description='Show available commands'),
-        BotCommand(command='help', description='Get help on how to use the bot'),
-    ]
-    lang_code = 'en'
+# async def set_bot_commands():
+#     commands = [
+#         BotCommand(command='start', description='Show available commands'),
+#         BotCommand(command='help', description='Get help on how to use the bot'),
+#     ]
+#     lang_code = 'en'
+#
+#     await bot(SetBotCommandsRequest(scope=BotCommandScopeDefault(), lang_code=lang_code, commands=commands))
 
-    await bot(SetBotCommandsRequest(scope=BotCommandScopeDefault(), lang_code=lang_code, commands=commands))
 
-
-@bot.on(events.NewMessage)
+@bot.on(events.NewMessage())
 async def on_message(event):
-
     me = await bot.get_me()
 
     # Проверка, что сообщение отправлено пользователем, а не ботом
@@ -229,19 +226,13 @@ async def help_message(event):
 
 
 async def main():
-    logger.info("Starting the main bot loop")  # Logging
-    bot.loop.create_task(processor.loop())
-    await bot.run_until_disconnected()
-
-
-async def start_bot():
-    await bot.start(bot_token=config.API_TOKEN)
+    async with bot:
+        logger.info("Starting the main bot loop")
+        await bot.loop.create_task(processor.loop())
+        bot.start(bot_token=config.API_TOKEN)
+        logger.info("Starting the bot")  # Logging
+        await bot.run_until_disconnected()
 
 
 if __name__ == '__main__':
-    with bot:
-        logger.info("Setting bot commands")  # Logging
-        bot.loop.run_until_complete(set_bot_commands())
-        bot.loop.run_until_complete(start_bot())  # Сначала запускаем бота
-        logger.info("Starting the bot")  # Logging
-        bot.loop.run_until_complete(main())
+    asyncio.run(main())
