@@ -10,8 +10,10 @@ from functools import partial
 
 import aiofiles
 import aiofiles.os
+import telethon
 from telethon import TelegramClient, events, functions
-from telethon.tl.types import BotCommand, BotCommandScopeDefault
+from telethon.tl.custom import Message
+from telethon.tl.types import BotCommand, BotCommandScopeDefault, MessageMediaPhoto
 from telethon.tl.functions.bots import SetBotCommandsRequest
 from pixelization import PixelizationModel
 from PIL import Image  # nah u to lazy to replace by wand
@@ -92,13 +94,36 @@ class Task:
             print(f'Error updating message: {e}')
 
 
-class QueueProcessor:
+class QueueWorkers:
     def __init__(self):
-        self.queue = []
-        self.qsize = 0
+        self.queue = asyncio.Queue()
+
         self.times_history = []
         self.model_worker = PixelizationModel()
         self.model_worker.load()
+        self.process_pool = ProcessPoolExecutor(max_workers=config.NUM_PROCESS)
+
+    async def put_into_queue(self, event: events.NewMessage.Event):
+        logger.info(f"Task added for processing image: {event.photo}")  # Logging
+        pass
+
+    async def update_status(self):
+        pass
+
+    async def worker_loop(self):
+        pass
+
+
+class QueueProcessor:
+    def __init__(self):
+        self.todo_queue = []
+
+        self.model_worker = PixelizationModel()
+        self.model_worker.load()
+
+        self.qsize = 0
+        self.times_history = []
+
         self.process_pool = ProcessPoolExecutor(max_workers=config.NUM_PROCESS)  # Создаем пул процессов
 
     async def process_image(self, image_bytes, pixel_size):
@@ -121,8 +146,7 @@ class QueueProcessor:
             process_func
         )
 
-        #processed_img = self.model_worker.pixelize(original_img,pixel_size,upscale_after=True,copy_hue=True,copy_sat=True)
-
+        # processed_img = self.model_worker.pixelize(original_img,pixel_size,upscale_after=True,copy_hue=True,copy_sat=True)
 
         output_image = io.BytesIO()
         processed_img.save(output_image, format='PNG')
@@ -197,17 +221,17 @@ processor = QueueProcessor()
 
 
 @bot.on(events.NewMessage())
-async def on_message(event):
-    me = await bot.get_me()
+async def on_message(event: events.NewMessage.Event) -> None:
+    message: Message = event.message
 
-    # Проверка, что сообщение отправлено пользователем, а не ботом
-    if event.sender_id and event.sender_id != me.id:  # Используем sender_id
-        if not event.photo:
-            await event.reply('Please provide an image to pixelate.')
-            return
-        await processor.add_task(event)
-    else:
-        logger.info("Message from bot ignored.")  # Логирование игнорируемого сообщения
+    me = await bot.get_me()
+    if message.from_id == me.id:
+        return
+    if message.media is not MessageMediaPhoto:
+        return
+    if not message.photo:
+        return
+    await processor.add_task(event)
 
 
 @bot.on(events.NewMessage(pattern='/start'))
