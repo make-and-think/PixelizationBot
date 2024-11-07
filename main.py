@@ -6,11 +6,12 @@ import os
 import io
 import tempfile
 from concurrent.futures import ProcessPoolExecutor
+from datetime import datetime
 from functools import partial
+from collections import deque
 
 import aiofiles
 import aiofiles.os
-import telethon
 from telethon import TelegramClient, events, functions
 from telethon.tl.custom import Message
 from telethon.tl.types import BotCommand, BotCommandScopeDefault, MessageMediaPhoto
@@ -94,24 +95,152 @@ class Task:
             print(f'Error updating message: {e}')
 
 
+class ImageToProcess:
+    def __init__(self, event: events.NewMessage.Event, queue_pos):
+        self._start_time = None
+        self._end_time = None
+        # TODO make metrics of size of image and pixel_size
+
+        self.pixel_size = 4
+        self.event = event
+        self.current_queue_pos = queue_pos
+        self.relpy_message = None
+        self.error = False
+
+        if event.text:
+            try:
+                self.pixel_size = int(event.text)
+                self.pixel_size = max(1, min(self.pixel_size, 16))
+            except ValueError:
+                pass
+
+    def change_queue_pos(self, current_pos: int):
+        self.current_queue_pos = current_pos
+
+    async def update_status_message(self):
+        status_text = 'Please wait, your image is being processed...\n'
+        if self.error:
+            status_text = 'Something went wrong during processing. Please try again later.'
+        elif self.current_queue_pos == -1:
+            self._start_time = time.time()
+            status_text += f'(Estimated time: {None} sec.)'
+        elif self.current_queue_pos <= -1:
+            status_text += 'Done.'
+            self._end_time = time.time()
+        else:
+            status_text += f'(Position in the queue: {self.current_queue_pos}; Estimated time: {None} sec.)'
+
+        try:
+            if not self.relpy_message:
+                self.relpy_message = await self.event.reply(status_text)
+                return
+            await self.relpy_message.edit(status_text)
+        except Exception as e:
+            logger.info(f'Error updating message: {e}')
+        return self.current_queue_pos
+
+
 class QueueWorkers:
     def __init__(self):
-        self.queue = asyncio.Queue()
+        self.queue: deque[ImageToProcess] = deque()
 
         self.times_history = []
         self.model_worker = PixelizationModel()
         self.model_worker.load()
+
         self.process_pool = ProcessPoolExecutor(max_workers=config.NUM_PROCESS)
+        self.work_task_pool = []
+        for _ in range(config.NUM_PROCESS):
+            self.work_task_pool.append(self.worker_loop())
+        print(self.work_task_pool)
 
     async def put_into_queue(self, event: events.NewMessage.Event):
-        logger.info(f"Task added for processing image: {event.photo}")  # Logging
-        pass
+        logger.info(f"Task added for processing image: {event.photo}")
+        image_task = ImageToProcess(event, len(self.queue) + 1)
+        self.queue.append(image_task)
+        await image_task.update_status_message()
 
     async def update_status(self):
-        pass
+        for image_task in self.queue:
+            await image_task.update_status_message()
+
+    def _take_image_task(self):
+        selected = self.queue.popleft()
+        for i, image_task in enumerate(self.queue):
+            image_task.change_queue_pos(i)
+        return selected
+
+    async def process_image(self, image_bytes: io.BytesIO, pixel_size: int):
+        image_bytes.seek(0)
+        original_img = Image.open(image_bytes)
+
+        process_func = partial(
+            self.model_worker.pixelize,
+            original_img,
+            pixel_size,
+            upscale_after=True,
+            copy_hue=True,
+            copy_sat=True
+        )
+        loop = asyncio.get_event_loop()
+        processed_img = await loop.run_in_executor(
+            self.process_pool,
+            process_func
+        )
+
+        output_image = io.BytesIO()
+        now = datetime.now()
+        output_image.name = f'output-image-{now.strftime("%d.%m.%Y-%H:%M:%S")}.png'
+        processed_img.save(output_image, format='PNG')
+        output_image.seek(0)
+
+        # await loop.run_in_executor(self.process_pool, self.model_worker.unload())
+        # await loop.run_in_executor(self.process_pool, self.model_worker.load())
+
+        return output_image
 
     async def worker_loop(self):
-        pass
+        logger.info(f"Start worker {id(self)}")
+        while True:
+            if not len(self.queue):
+                await asyncio.sleep(1)
+                continue
+            logger.info("Start process image")
+
+            image_task = self._take_image_task()
+            image_task.change_queue_pos(-1)
+
+            await image_task.update_status_message()
+            await self.update_status()
+
+            input_image_bytes = io.BytesIO()
+            logger.info(
+                f"Downloading image: ID={image_task.event.photo.id}, \
+                                Access Hash={image_task.event.photo.access_hash}, \
+                                Date={image_task.event.photo.date}, \
+                                Sizes={[(size.type, size.w, size.h) for size in image_task.event.photo.sizes]}")
+
+            await bot.download_media(image_task.event.photo, file=input_image_bytes)
+            output_image = await self.process_image(input_image_bytes, image_task.pixel_size)
+
+            await bot.send_file(
+                image_task.event.chat_id,
+                output_image,
+                filename=output_image.name,
+                force_document=True
+            )
+
+            image_task.change_queue_pos(-2)
+            await image_task.update_status_message()
+            try:
+                pass
+
+            except Exception as e:
+                logger.error(f"Error when process image {e}")
+                image_task.error = True
+                await image_task.update_status_message()
+            self.model_worker.unload()
+            self.model_worker.load()
 
 
 class QueueProcessor:
@@ -207,31 +336,31 @@ class QueueProcessor:
             self.model_worker.load()
 
 
-processor = QueueProcessor()
+processor = QueueWorkers()
 
 
-# async def set_bot_commands():
-#     commands = [
-#         BotCommand(command='start', description='Show available commands'),
-#         BotCommand(command='help', description='Get help on how to use the bot'),
-#     ]
-#     lang_code = 'en'
-#
-#     await bot(SetBotCommandsRequest(scope=BotCommandScopeDefault(), lang_code=lang_code, commands=commands))
+async def set_bot_commands():
+    commands = [
+        BotCommand(command='start', description='Show available commands'),
+        BotCommand(command='help', description='Get help on how to use the bot'),
+    ]
+    lang_code = 'en'
+
+    await bot(SetBotCommandsRequest(scope=BotCommandScopeDefault(), lang_code=lang_code, commands=commands))
 
 
 @bot.on(events.NewMessage())
-async def on_message(event: events.NewMessage.Event) -> None:
-    message: Message = event.message
-
+async def on_message(event):
     me = await bot.get_me()
-    if message.from_id == me.id:
-        return
-    if message.media is not MessageMediaPhoto:
-        return
-    if not message.photo:
-        return
-    await processor.add_task(event)
+
+    # Проверка, что сообщение отправлено пользователем, а не ботом
+    if event.sender_id and event.sender_id != me.id:  # Используем sender_id
+        if not event.photo:
+            await event.reply('Please provide an image to pixelate.')
+            return
+        await processor.put_into_queue(event)
+    else:
+        logger.info("Message from bot ignored.")  # Логирование игнорируемого сообщения
 
 
 @bot.on(events.NewMessage(pattern='/start'))
@@ -252,9 +381,13 @@ async def help_message(event):
 async def main():
     async with bot:
         logger.info("Starting the main bot loop")
-        await bot.loop.create_task(processor.loop())
-        bot.start(bot_token=config.API_TOKEN)
+        await set_bot_commands()
+        for image_work_task in processor.work_task_pool:
+            logger.info("Put work task")
+            bot.loop.create_task(image_work_task)
+
         logger.info("Starting the bot")  # Logging
+        await bot.start(bot_token=config.API_TOKEN)
         await bot.run_until_disconnected()
 
 

@@ -16,6 +16,6 @@ with open('config/config.yml') as f:
     # force disable cuda and set limit to one thread
     if config.__dict__.get("FORCE_USE_CPU"):
         os.environ["CUDA_VISIBLE_DEVICES"] = ""
-    if config.__dict__.get("FORCE_USE_CPU"):
+    if config.__dict__.get("NUM_PROCESS"):
         import torch
         torch.set_num_threads(1)

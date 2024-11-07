@@ -16,7 +16,7 @@ NETG_PATH = config.NETG_PATH
 ALIASNET_PATH = config.ALIASNET_PATH
 REFERENCE_PATH = config.REFERENCE_PATH
 
-if config.__dict__.get("FORCE_USE_CPU"):
+if config.__dict__.get("NUM_PROCESS"):
     torch.set_num_threads(1)
 
 # TODO MOVE to config file
