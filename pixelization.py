@@ -166,6 +166,8 @@ class PixelizationModel:
             out_t = self.alias_net(self.G_A_net(in_t, self.ref_t))
 
         logger.info("Start start to_image")
+        self.unload()
+        self.load()
         return self.to_image(out_t, pixel_size, upscale_after, original_img, copy_hue, copy_sat)
 
 

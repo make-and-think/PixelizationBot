@@ -18,7 +18,6 @@ from telethon.tl.custom import Message
 from telethon.tl.types import BotCommand, BotCommandScopeDefault, MessageMediaPhoto
 from telethon.tl.functions.bots import SetBotCommandsRequest
 
-
 from pixelization import PixelizationModel
 from PIL import Image  # nah u to lazy to replace by wand
 
@@ -40,8 +39,8 @@ bot = TelegramClient('bot', config.API_ID, config.API_HASH)
 
 class ImageToProcess:
     def __init__(self, event: events.NewMessage.Event, queue_pos, compute_coefficient=1):
-        self._start_time = None
-        self._end_time = None
+        self.start_time = None
+        self.end_time = None
 
         size = event.photo.sizes[-1]
         self.height = size.h
@@ -56,6 +55,7 @@ class ImageToProcess:
 
         if event.text:
             try:
+                print(self.current_queue_pos, event.text)
                 self.pixel_size = int(event.text)
                 self.pixel_size = max(1, min(self.pixel_size, 16))
             except ValueError:
@@ -65,24 +65,21 @@ class ImageToProcess:
         return compute_coefficient * ((self.height * self.width) / self.pixel_size)
 
     def real_time_to_processes(self):
-        return self._end_time - self._start_time
+        return self.end_time - self.start_time
 
     def change_queue_pos(self, current_pos: int):
         self.current_queue_pos = current_pos
-
-    def set_image_size(self, height: int, width: int):
-        pass
 
     async def update_status_message(self, time_to_wait=0):
         status_text = 'Please wait, your image is being processed...\n'
         if self.error:
             status_text = 'Something went wrong during processing. Please try again later.'
         elif self.current_queue_pos == -1:
-            self._start_time = time.time()
+            self.start_time = time.time()
             status_text += f'(Estimated time: {time_to_wait:.2f} sec.)'
         elif self.current_queue_pos <= -1:
             status_text += 'Done.'
-            self._end_time = time.time()
+            self.end_time = time.time()
         else:
             status_text += f'(Position in the queue: {self.current_queue_pos}; Estimated time: {time_to_wait:.2f} sec.)'
 
@@ -111,22 +108,23 @@ class QueueWorkers:
 
         self.compute_coefficient = 1
 
-    async def put_into_queue(self, event: events.NewMessage.Event):
-        logger.info(f"Task added for processing image: {event.photo}")
-        print("messsage", event.message)
-        image_task = ImageToProcess(event, len(self.queue) + 1, compute_coefficient=self.compute_coefficient)
-        self.queue.append(image_task)
-
-        time_to_wait = 0
-        for temp_image_task in self.queue:
-            time_to_wait += temp_image_task.predict_time_to_processes(self.compute_coefficient)
-        await image_task.update_status_message(time_to_wait)
+    def put_into_queue(self, input_data: events.NewMessage.Event | list[events.NewMessage.Event]):
+        task_list = []
+        if isinstance(input_data, list):
+            for event in input_data:
+                logger.info(f"Task added for processing image: {event.photo}")
+                task_list.append(
+                    ImageToProcess(event, len(self.queue) + 1, compute_coefficient=self.compute_coefficient))
+        else:
+            task_list = [ImageToProcess(input_data, len(self.queue) + 1, compute_coefficient=self.compute_coefficient)]
+        self.queue.extend(task_list)
+        print(self.queue)
 
     async def update_status(self):
         time_to_wait = 0
-        for image_task in self.queue:
+        for image_task in self.queue.copy():
             time_to_wait += image_task.predict_time_to_processes(self.compute_coefficient)
-            await image_task.update_status_message(time_to_wait)
+            #await image_task.update_status_message(time_to_wait)
 
     def _take_image_task(self):
         selected = self.queue.popleft()
@@ -176,8 +174,8 @@ class QueueWorkers:
             image_task.change_queue_pos(-1)
 
             time_to_wait = image_task.predict_time_to_processes(self.compute_coefficient)
-            await image_task.update_status_message(time_to_wait)
             await self.update_status()
+            await image_task.update_status_message(time_to_wait)
 
             input_image_bytes = io.BytesIO()
             logger.info(
@@ -189,7 +187,8 @@ class QueueWorkers:
             try:
                 await bot.download_media(image_task.event.photo, file=input_image_bytes)
                 output_image = await self.process_image(input_image_bytes, image_task.pixel_size)
-
+                self.compute_coefficient = ((time.time() - image_task.start_time) * image_task.pixel_size) / (
+                        image_task.height * image_task.width)
                 await bot.send_file(
                     image_task.event.chat_id,
                     output_image,
@@ -199,16 +198,15 @@ class QueueWorkers:
 
                 image_task.change_queue_pos(-2)
                 await image_task.update_status_message()
-                self.compute_coefficient = (image_task.real_time_to_processes() * image_task.pixel_size) / (
-                        image_task.height * image_task.width)
+
 
             except Exception as e:
                 logger.error(f"Error when process image {e}")
                 image_task.error = True
                 await image_task.update_status_message()
 
-            self.model_worker.unload()
-            self.model_worker.load()
+
+
 
 
 processor = QueueWorkers()
@@ -224,16 +222,35 @@ async def set_bot_commands():
     await bot(SetBotCommandsRequest(scope=BotCommandScopeDefault(), lang_code=lang_code, commands=commands))
 
 
+@bot.on(events.Album())
+async def on_message(event):
+    me = await bot.get_me()
+    if event.sender_id and event.sender_id == me.id:
+        return
+
+    text = None
+    event_list = []
+    for message in event.messages:
+        if text is None:
+            text = message.text
+        message.text = text
+        event_list.append(message)
+
+    processor.put_into_queue(event_list)
+
+
 @bot.on(events.NewMessage())
 async def on_message(event):
     me = await bot.get_me()
 
     # Проверка, что сообщение отправлено пользователем, а не ботом
-    if event.sender_id and event.sender_id != me.id:  # Используем sender_id
+    if event.sender_id and event.sender_id != me.id:
+        if event.grouped_id:
+            return
         if not event.photo:
             await event.reply('Please provide an image to pixelate.')
             return
-        await processor.put_into_queue(event)
+        processor.put_into_queue(event)
     else:
         logger.info("Message from bot ignored.")  # Логирование игнорируемого сообщения
 
