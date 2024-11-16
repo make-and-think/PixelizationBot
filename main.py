@@ -6,6 +6,7 @@ import os
 import io
 import tempfile
 from concurrent.futures import ProcessPoolExecutor
+from torch.multiprocessing import Pool
 from datetime import datetime
 from functools import partial
 from collections import deque
@@ -16,6 +17,8 @@ from telethon import TelegramClient, events, functions
 from telethon.tl.custom import Message
 from telethon.tl.types import BotCommand, BotCommandScopeDefault, MessageMediaPhoto
 from telethon.tl.functions.bots import SetBotCommandsRequest
+
+
 from pixelization import PixelizationModel
 from PIL import Image  # nah u to lazy to replace by wand
 
@@ -35,73 +38,17 @@ logger = logging.getLogger(__name__)
 bot = TelegramClient('bot', config.API_ID, config.API_HASH)
 
 
-class AsyncTempFile:
-    def __init__(self, ext=''):
-        self.fd = None
-        self.name = uuid.uuid4().hex + ext
-
-    async def __aenter__(self):
-        self.fd = await aiofiles.open(self.name, 'wb+')
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.fd.close()
-        await aiofiles.os.remove(self.name)
-
-    async def write(self, data):
-        await self.fd.write(data)
-
-
-class Task:
-    def __init__(self, event, queue_n):
-        self.event = event
-        self.queue_n = queue_n
-        self.message = None
-        self.pixel_size = 4
-        self.start_ts = 0
-        self.error = False
-
-        if event.text:
-            try:
-                self.pixel_size = int(event.text)
-                self.pixel_size = max(1, min(self.pixel_size, 16))
-            except ValueError:
-                pass
-
-    async def update_message(self, offset=0):
-        self.queue_n += offset
-
-        if not processor.times_history:
-            avg_time = 10
-        else:
-            avg_time = int(sum(processor.times_history) / len(processor.times_history))
-
-        text = 'Please wait, your image is being processed... '
-        if self.error:
-            text += 'Something went wrong during processing. Please try again later.'
-        elif self.queue_n <= 0:
-            text += 'Done.'
-        elif self.queue_n == 1:
-            text += f'(estimated time: {avg_time} sec.)'
-        else:
-            text += f'(position in the queue: {self.queue_n}; estimated time: {self.queue_n * avg_time} sec.)'
-
-        try:
-            if not self.message:
-                self.message = await self.event.reply(text)
-                return
-            await self.message.edit(text)
-        except Exception as e:
-            print(f'Error updating message: {e}')
-
-
 class ImageToProcess:
-    def __init__(self, event: events.NewMessage.Event, queue_pos):
+    def __init__(self, event: events.NewMessage.Event, queue_pos, compute_coefficient=1):
         self._start_time = None
         self._end_time = None
-        # TODO make metrics of size of image and pixel_size
 
+        size = event.photo.sizes[-1]
+        self.height = size.h
+        self.width = size.w
         self.pixel_size = 4
+        self.compute_coefficient = compute_coefficient
+
         self.event = event
         self.current_queue_pos = queue_pos
         self.relpy_message = None
@@ -114,21 +61,30 @@ class ImageToProcess:
             except ValueError:
                 pass
 
+    def predict_time_to_processes(self, compute_coefficient):
+        return compute_coefficient * ((self.height * self.width) / self.pixel_size)
+
+    def real_time_to_processes(self):
+        return self._end_time - self._start_time
+
     def change_queue_pos(self, current_pos: int):
         self.current_queue_pos = current_pos
 
-    async def update_status_message(self):
+    def set_image_size(self, height: int, width: int):
+        pass
+
+    async def update_status_message(self, time_to_wait=0):
         status_text = 'Please wait, your image is being processed...\n'
         if self.error:
             status_text = 'Something went wrong during processing. Please try again later.'
         elif self.current_queue_pos == -1:
             self._start_time = time.time()
-            status_text += f'(Estimated time: {None} sec.)'
+            status_text += f'(Estimated time: {time_to_wait:.2f} sec.)'
         elif self.current_queue_pos <= -1:
             status_text += 'Done.'
             self._end_time = time.time()
         else:
-            status_text += f'(Position in the queue: {self.current_queue_pos}; Estimated time: {None} sec.)'
+            status_text += f'(Position in the queue: {self.current_queue_pos}; Estimated time: {time_to_wait:.2f} sec.)'
 
         try:
             if not self.relpy_message:
@@ -148,21 +104,29 @@ class QueueWorkers:
         self.model_worker = PixelizationModel()
         self.model_worker.load()
 
-        self.process_pool = ProcessPoolExecutor(max_workers=config.NUM_PROCESS)
+        self.process_pool = ProcessPoolExecutor(config.get("NUM_PROCESS"))
         self.work_task_pool = []
         for _ in range(config.NUM_PROCESS):
             self.work_task_pool.append(self.worker_loop())
-        print(self.work_task_pool)
+
+        self.compute_coefficient = 1
 
     async def put_into_queue(self, event: events.NewMessage.Event):
         logger.info(f"Task added for processing image: {event.photo}")
-        image_task = ImageToProcess(event, len(self.queue) + 1)
+        print("messsage", event.message)
+        image_task = ImageToProcess(event, len(self.queue) + 1, compute_coefficient=self.compute_coefficient)
         self.queue.append(image_task)
-        await image_task.update_status_message()
+
+        time_to_wait = 0
+        for temp_image_task in self.queue:
+            time_to_wait += temp_image_task.predict_time_to_processes(self.compute_coefficient)
+        await image_task.update_status_message(time_to_wait)
 
     async def update_status(self):
+        time_to_wait = 0
         for image_task in self.queue:
-            await image_task.update_status_message()
+            time_to_wait += image_task.predict_time_to_processes(self.compute_coefficient)
+            await image_task.update_status_message(time_to_wait)
 
     def _take_image_task(self):
         selected = self.queue.popleft()
@@ -182,6 +146,7 @@ class QueueWorkers:
             copy_hue=True,
             copy_sat=True
         )
+
         loop = asyncio.get_event_loop()
         processed_img = await loop.run_in_executor(
             self.process_pool,
@@ -210,7 +175,8 @@ class QueueWorkers:
             image_task = self._take_image_task()
             image_task.change_queue_pos(-1)
 
-            await image_task.update_status_message()
+            time_to_wait = image_task.predict_time_to_processes(self.compute_coefficient)
+            await image_task.update_status_message(time_to_wait)
             await self.update_status()
 
             input_image_bytes = io.BytesIO()
@@ -220,118 +186,27 @@ class QueueWorkers:
                                 Date={image_task.event.photo.date}, \
                                 Sizes={[(size.type, size.w, size.h) for size in image_task.event.photo.sizes]}")
 
-            await bot.download_media(image_task.event.photo, file=input_image_bytes)
-            output_image = await self.process_image(input_image_bytes, image_task.pixel_size)
-
-            await bot.send_file(
-                image_task.event.chat_id,
-                output_image,
-                filename=output_image.name,
-                force_document=True
-            )
-
-            image_task.change_queue_pos(-2)
-            await image_task.update_status_message()
             try:
-                pass
+                await bot.download_media(image_task.event.photo, file=input_image_bytes)
+                output_image = await self.process_image(input_image_bytes, image_task.pixel_size)
+
+                await bot.send_file(
+                    image_task.event.chat_id,
+                    output_image,
+                    filename=output_image.name,
+                    force_document=True
+                )
+
+                image_task.change_queue_pos(-2)
+                await image_task.update_status_message()
+                self.compute_coefficient = (image_task.real_time_to_processes() * image_task.pixel_size) / (
+                        image_task.height * image_task.width)
 
             except Exception as e:
                 logger.error(f"Error when process image {e}")
                 image_task.error = True
                 await image_task.update_status_message()
-            self.model_worker.unload()
-            self.model_worker.load()
 
-
-class QueueProcessor:
-    def __init__(self):
-        self.todo_queue = []
-
-        self.model_worker = PixelizationModel()
-        self.model_worker.load()
-
-        self.qsize = 0
-        self.times_history = []
-
-        self.process_pool = ProcessPoolExecutor(max_workers=config.NUM_PROCESS)  # Создаем пул процессов
-
-    async def process_image(self, image_bytes, pixel_size):
-        # Выполняем обработку изображения в отдельном процессе
-        loop = asyncio.get_event_loop()
-        image_bytes.seek(0)
-        original_img = Image.open(image_bytes)
-
-        process_func = partial(
-            self.model_worker.pixelize,
-            original_img,
-            pixel_size,
-            upscale_after=True,
-            copy_hue=True,
-            copy_sat=True
-        )
-        #
-        processed_img = await loop.run_in_executor(
-            self.process_pool,
-            process_func
-        )
-
-        # processed_img = self.model_worker.pixelize(original_img,pixel_size,upscale_after=True,copy_hue=True,copy_sat=True)
-
-        output_image = io.BytesIO()
-        processed_img.save(output_image, format='PNG')
-        output_image.seek(0)
-        output_image.name = 'processed_image.png'
-        return output_image
-
-    async def add_task(self, event):
-        self.qsize += 1
-        task = Task(event=event, queue_n=self.qsize)
-        self.queue.append(task)
-        await task.update_message()
-        logger.info(f"Task added for processing image: {event.photo}")  # Logging
-
-    async def loop(self):
-        # Todo change to model load/unload semaphore control
-        while True:
-            if not self.queue:
-                await asyncio.sleep(1)
-                continue
-            logger.info("Start task")
-            task = self.queue.pop(0)
-            task.start_ts = time.time()
-
-            try:
-                input_image_bytes = io.BytesIO()
-                logger.info(
-                    f"Downloading image: ID={task.event.photo.id}, \
-                    Access Hash={task.event.photo.access_hash}, \
-                    Date={task.event.photo.date}, \
-                    Sizes={[(size.type, size.w, size.h) for size in task.event.photo.sizes]}")
-
-                await bot.download_media(task.event.photo, file=input_image_bytes)
-
-                # Обрабатываем изображение в отдельном процессе
-                output_image = await self.process_image(input_image_bytes, task.pixel_size)
-
-                await bot.send_file(
-                    task.event.chat_id,
-                    output_image,
-                    filename=output_image.name,
-                    force_document=True
-                )
-            except Exception as e:
-                logger.error(f'Error processing task: {e}')
-                task.error = True
-            finally:
-                self.times_history.append(time.time() - task.start_ts)
-                if len(self.times_history) > 10:
-                    self.times_history.pop(0)
-
-                self.qsize -= 1
-                await task.update_message(-1)
-                for remaining_task in self.queue:
-                    await remaining_task.update_message(-1)
-            # If we get error we anyway unload and load model
             self.model_worker.unload()
             self.model_worker.load()
 
