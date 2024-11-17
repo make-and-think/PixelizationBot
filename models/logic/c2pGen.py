@@ -234,40 +234,32 @@ class RGBDecoder(nn.Module):
     #     out += residual
     #     return out
     def forward(self, x, code):
-        from torch.utils.checkpoint import checkpoint
-        
-        # Первый блок с residual connection
         residual = x
-        x = checkpoint(lambda x, c: self.mod_conv_1(x, c), x, code[:, :256])
-        x = checkpoint(lambda x, c: self.mod_conv_2(x, c), x, code[:, 256:256*2])
+        x = self.mod_conv_1(x, code[:, :256])
+        x = self.mod_conv_2(x, code[:, 256*1:256*2])
         x += residual
-        
-        # Второй блок с residual connection
         residual = x
-        x = checkpoint(lambda x, c: self.mod_conv_3(x, c), x, code[:, 256*2:256*3])
-        x = checkpoint(lambda x, c: self.mod_conv_4(x, c), x, code[:, 256*3:256*4])
+        x = self.mod_conv_2(x, code[:, 256*2:256 * 3])
+        x = self.mod_conv_2(x, code[:, 256*3:256 * 4])
         x += residual
-        
-        # Третий блок с residual connection
+        residual =x
+        x = self.mod_conv_2(x, code[:, 256*4:256 * 5])
+        x = self.mod_conv_2(x, code[:, 256*5:256 * 6])
+        x += residual
         residual = x
-        x = checkpoint(lambda x, c: self.mod_conv_5(x, c), x, code[:, 256*4:256*5])
-        x = checkpoint(lambda x, c: self.mod_conv_6(x, c), x, code[:, 256*5:256*6])
+        x = self.mod_conv_2(x, code[:, 256*6:256 * 7])
+        x = self.mod_conv_2(x, code[:, 256*7:256 * 8])
         x += residual
-        
-        # Четвертый блок с residual connection
-        residual = x
-        x = checkpoint(lambda x, c: self.mod_conv_7(x, c), x, code[:, 256*6:256*7])
-        x = checkpoint(lambda x, c: self.mod_conv_8(x, c), x, code[:, 256*7:256*8])
-        x += residual
-        
-        # Upsampling и финальные слои
+        # print(x.shape)
         x = self.upsample_block1(x)
+        # print(x.shape)
         x = self.conv_1(x)
-        
+        # print(x_small.shape)
         x = self.upsample_block2(x)
+        # print(x.shape)
         x = self.conv_2(x)
-        
+        # print(x_middle.shape)
         x = self.conv_3(x)
-        
+        # print(x_big.shape)
         return x
 
