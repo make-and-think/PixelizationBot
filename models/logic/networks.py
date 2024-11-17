@@ -9,6 +9,7 @@ from .c2pDis import *
 
 class Identity(nn.Module):
     def forward(self, x):
+        torch.cuda.empty_cache()  # Очистка памяти после генерации
         return x
 
 def get_norm_layer(norm_type='instance'):
@@ -241,6 +242,7 @@ class GANLoss(nn.Module):
                 loss = -prediction.mean()
             else:
                 loss = prediction.mean()
+        torch.cuda.empty_cache()  # Очистка памяти после генерации
         return loss
 
 

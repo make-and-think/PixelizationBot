@@ -35,6 +35,7 @@ class ModulationConvBlock(nn.Module):
 
         x = x.view(batch, self.out_c, height, width) + self.bias.view(1, -1, 1, 1)
         x = self.activate(x) * self.activate_scale
+        torch.cuda.empty_cache()
         return x
 
     def _compute_weight(self, weight, code, batch):
@@ -112,6 +113,7 @@ class AliasConvBlock(nn.Module):
             x = self.norm(x)
         if self.activation:
             x = self.activation(x)
+        torch.cuda.empty_cache()
         return x
 
 class AliasResBlocks(nn.Module):
@@ -122,7 +124,9 @@ class AliasResBlocks(nn.Module):
 
     def forward(self, x):
         # Pass the input through the sequential model
-        return self.model(x)
+        result = self.model(x)
+        torch.cuda.empty_cache()
+        return result
 class AliasResBlock(nn.Module):
     def __init__(self, dim, norm='in', activation='relu', pad_type='zero'):
         super(AliasResBlock, self).__init__()
@@ -140,6 +144,7 @@ class AliasResBlock(nn.Module):
         out = self.model(x)
         # Add the residual connection
         out += residual
+        torch.cuda.empty_cache()
         return out
 ##################################################################################
 # Sequential Models
@@ -152,7 +157,9 @@ class ResBlocks(nn.Module):
 
     def forward(self, x):
         # Pass the input through the sequential model
-        return self.model(x)
+        result = self.model(x)
+        torch.cuda.empty_cache()
+        return result
 
 
 class MLP(nn.Module):
@@ -170,10 +177,12 @@ class MLP(nn.Module):
         # If style1 is not provided, use style0
         style1 = style0
         # Compute the output using the model
-        return self.model[3](
+        result = self.model[3](
             (1 - a) * self.model[0:3](style0.view(style0.size(0), -1)) + 
             a * self.model[0:3](style1.view(style1.size(0), -1))
         )
+        torch.cuda.empty_cache()
+        return result
 ##################################################################################
 # Basic Blocks
 ##################################################################################
@@ -194,6 +203,7 @@ class ResBlock(nn.Module):
         out = self.model(x)
         # Add the residual connection
         out += residual
+        torch.cuda.empty_cache()
         return out
 
 
@@ -261,6 +271,7 @@ class ConvBlock(nn.Module):
             x = self.norm(x)
         if self.activation:
             x = self.activation(x)
+        torch.cuda.empty_cache()
         return x
 
 class linearBlock(nn.Module):
@@ -311,6 +322,7 @@ class linearBlock(nn.Module):
             out = self.norm(out)
         if self.activation:
             out = self.activation(out)
+        torch.cuda.empty_cache()
         return out
 ##################################################################################
 # Normalization layers

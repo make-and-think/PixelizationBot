@@ -42,7 +42,7 @@ class MarginCosineProduct(nn.Module):
         
         # Calculate output with margin
         output = self.s * (cosine - one_hot * self.m)
-
+        torch.cuda.empty_cache()  # Очистка памяти после генерации
         return output
 
     def __repr__(self):
@@ -86,7 +86,7 @@ class ArcMarginProduct(nn.Module):
         # Calculate output with margins
         output = (one_hot * phi) + ((1.0 - one_hot) * cosine)
         output = output * self.s
-
+        torch.cuda.empty_cache()  # Очистка памяти после генерации
         return output
 
 
@@ -130,7 +130,7 @@ class MultiMarginProduct(nn.Module):
         output = (one_hot * phi) + ((1.0 - one_hot) * cosine)  # Additive angular margin
         output = output - one_hot * self.m2  # Additive cosine margin
         output = output * self.s
-
+        torch.cuda.empty_cache()  # Очистка памяти после генерации
         return output
 
 
@@ -170,6 +170,7 @@ class CPDis(nn.Module):
         assert x.ndim == 4, x.ndim
         h = self.main(x)
         out_makeup = self.conv1(h)
+        torch.cuda.empty_cache()  # Очистка памяти после генерации
         return out_makeup
 
 
@@ -217,6 +218,7 @@ class CPDis_cls(nn.Module):
         out_cls = out_cls.squeeze(-1).squeeze(-1)  # Remove last two dimensions
         out_cls = self.classifier(out_cls, label)
         out_makeup = self.conv1(h)  # Shape: ([1, 1, 30, 30])
+        torch.cuda.empty_cache()  # Очистка памяти после генерации
         return out_makeup, out_cls
 
 class SpectralNorm(object):
