@@ -6,3 +6,4 @@ NETG_PATH: "models/160_net_G_A.pth"
 ALIASNET_PATH: "models/alias_net.pth"
 REFERENCE_PATH: "reference.png"
 NUM_PROCESS: 2
+MODEL_KEEP_ALIVE_SECONDS: 300

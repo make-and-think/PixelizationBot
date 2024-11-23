@@ -99,7 +99,8 @@ class QueueProcessor:
         self.times_history = []
         self.model_worker = PixelizationModel()
         self.model_worker.load()
-        self.process_pool = ProcessPoolExecutor(max_workers=config.NUM_PROCESS)  # Создаем пул процессов
+        self.process_pool = ProcessPoolExecutor(max_workers=config.NUM_PROCESS)
+        self.last_task_time = time.time()
 
     async def process_image(self, image_bytes, pixel_size):
         # Выполняем обработку изображения в отдельном процессе
@@ -138,14 +139,18 @@ class QueueProcessor:
         logger.info(f"Task added for processing image: {event.photo}")  # Logging
 
     async def loop(self):
-        # Todo change to model load/unload semaphore control
         while True:
             if not self.queue:
+                # Проверяем, прошло ли время удержания модели в памяти
+                if time.time() - self.last_task_time > config.MODEL_KEEP_ALIVE_SECONDS:
+                    self.model_worker.unload()
                 await asyncio.sleep(1)
                 continue
+
             logger.info("Start task")
             task = self.queue.pop(0)
             task.start_ts = time.time()
+            self.last_task_time = task.start_ts  # Обновляем время последней задачи
 
             try:
                 input_image_bytes = io.BytesIO()
@@ -157,7 +162,6 @@ class QueueProcessor:
 
                 await bot.download_media(task.event.photo, file=input_image_bytes)
 
-                # Обрабатываем изображение в отдельном процессе
                 output_image = await self.process_image(input_image_bytes, task.pixel_size)
 
                 await bot.send_file(
@@ -178,9 +182,6 @@ class QueueProcessor:
                 await task.update_message(-1)
                 for remaining_task in self.queue:
                     await remaining_task.update_message(-1)
-            # If we get error we anyway unload and load model
-            self.model_worker.unload()
-            self.model_worker.load()
 
 
 processor = QueueProcessor()
