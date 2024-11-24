@@ -156,6 +156,10 @@ class QueueProcessor:
             task.start_ts = time.time()
             self.last_task_time = task.start_ts  # Обновляем время последней задачи
 
+            # Загружаем модель, если она была выгружена
+            if self.model_worker.G_A_net is None:
+                self.model_worker.load()
+
             try:
                 input_image_bytes = io.BytesIO()
                 logger.info(
