@@ -146,7 +146,7 @@ class QueueProcessor:
         while True:
             if not self.queue:
                 # Проверяем, прошло ли время удержания модели в памяти
-                if time.time() - self.last_task_time > config.MODEL_KEEP_ALIVE_SECONDS:
+                if self.model_worker.G_A_net is not None and time.time() - self.last_task_time > config.MODEL_KEEP_ALIVE_SECONDS:
                     self.model_worker.unload()
                 await asyncio.sleep(1)
                 continue
