@@ -1,3 +1,7 @@
+import multiprocessing
+if __name__ == '__main__':
+    multiprocessing.set_start_method('spawn')
+
 import uuid
 import time
 import asyncio
@@ -17,8 +21,6 @@ from pixelization import PixelizationModel
 from PIL import Image  # nah u to lazy to replace by wand
 
 from config.config import config
-
-import multiprocessing
 
 if not os.path.exists('logs'):
     os.makedirs('logs')
@@ -238,5 +240,4 @@ async def main():
 
 
 if __name__ == '__main__':
-    multiprocessing.set_start_method('spawn')
     asyncio.run(main())
