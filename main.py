@@ -105,6 +105,7 @@ class QueueWorkers:
         self.work_task_pool = []
         for _ in range(config.NUM_PROCESS):
             self.work_task_pool.append(self.worker_loop())
+        self.last_task_time = time.time()
 
         self.compute_coefficient = 1
 
@@ -118,7 +119,6 @@ class QueueWorkers:
         else:
             task_list = [ImageToProcess(input_data, len(self.queue) + 1, compute_coefficient=self.compute_coefficient)]
         self.queue.extend(task_list)
-        print(self.queue)
 
     async def update_status(self):
         time_to_wait = 0
@@ -199,15 +199,11 @@ class QueueWorkers:
                 image_task.change_queue_pos(-2)
                 await image_task.update_status_message()
 
-
             except Exception as e:
                 logger.error(f"Error when process image {e}")
                 image_task.error = True
                 await image_task.update_status_message()
-
-
-
-
+            self.last_task_time = time.time()  # Обновляем время последней задачи
 
 processor = QueueWorkers()
 

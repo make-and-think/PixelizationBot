@@ -16,6 +16,7 @@ class P2CGen(nn.Module):
         # print(x_middle.shape)
         # print(x_big.shape)
         #return y_small, y_middle, y_big
+        torch.cuda.empty_cache()
         return x
 
 
@@ -34,6 +35,7 @@ class RGBEncoder(nn.Module):
         self.output_dim = dim
 
     def forward(self, x):
+        torch.cuda.empty_cache()
         return self.model(x)
 
 
@@ -73,4 +75,5 @@ class RGBDecoder(nn.Module):
         # print(x_middle.shape)
         x = self.conv_3(x)
         # print(x_big.shape)
+        torch.cuda.empty_cache()
         return x
