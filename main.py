@@ -261,14 +261,12 @@ async def on_message(event):
     if event.sender_id and event.sender_id == me.id:
         return
 
-    text = None
     event_list = []
     for message in event.messages:
-        if text is None:
-            text = message.text
-        message.text = text
-        event_list.append(message)
+        if message.photo:  # Проверяем, есть ли фото в сообщении
+            event_list.append(message)
 
+    # Помещаем все изображения в очередь
     processor.put_into_queue(event_list)
 
 
@@ -280,10 +278,10 @@ async def on_message(event):
     if event.sender_id and event.sender_id != me.id:
         if event.grouped_id:
             return
-        if not event.photo:
+        if event.photo:  # Проверяем, есть ли фото в сообщении
+            processor.put_into_queue(event)  # Помещаем одно изображение в очередь
+        else:
             await event.reply('Please provide an image to pixelate.')
-            return
-        processor.put_into_queue(event)
     else:
         logger.info("Message from bot ignored.")  # Логирование игнорируемого сообщения
 
