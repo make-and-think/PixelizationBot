@@ -176,10 +176,16 @@ class QueueWorkers:
                     self.model_worker.unload()
                     self.model_unload_timer = None
                 continue
+            
             logger.info("Start process image")
 
             # Сбрасываем таймер выгрузки модели, так как начинается новая задача
             self.model_unload_timer = time.time()
+
+            # Проверяем, загружена ли модель, если нет, загружаем её
+            if self.model_worker.G_A_net is None:
+                logger.info("Loading models...")
+                self.model_worker.load()
 
             image_task = self._take_image_task()
             image_task.change_queue_pos(-1)
