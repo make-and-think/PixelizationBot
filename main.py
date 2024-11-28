@@ -103,8 +103,8 @@ class QueueWorkers:
         self.times_history = []
         self.model_worker = PixelizationModel()
         
-        #if self.model_worker.G_A_net is None:
-        #       self.model_worker.load()
+        # Загрузка модели при инициализации
+        self.model_worker.load()  # Загрузка модели здесь
 
         self.process_pool = ProcessPoolExecutor(config.get("NUM_PROCESS"))
         self.work_task_pool = []
@@ -181,18 +181,8 @@ class QueueWorkers:
             # Сбрасываем таймер выгрузки модели, так как начинается новая задача
             self.model_unload_timer = time.time()
 
-            # Загружаем модель, если она была выгружена
-            if self.model_worker.G_A_net is None:
-                logger.info("Loading models...")
-                self.model_worker.load()
-
             image_task = self._take_image_task()
             image_task.change_queue_pos(-1)
-
-            # Проверяем, что модель загружена перед обработкой
-            if self.model_worker.G_A_net is None:
-                logger.error("Model is not loaded properly.")
-                continue
 
             time_to_wait = image_task.predict_time_to_processes(self.compute_coefficient)
             await self.update_status()
