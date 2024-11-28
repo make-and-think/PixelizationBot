@@ -1,3 +1,6 @@
+import multiprocessing
+if __name__ == '__main__':
+    multiprocessing.set_start_method('spawn')
 import uuid
 import time
 import asyncio
@@ -99,7 +102,9 @@ class QueueWorkers:
 
         self.times_history = []
         self.model_worker = PixelizationModel()
-        self.model_worker.load()
+        
+        if self.model_worker.G_A_net is None:
+                self.model_worker.load()
 
         self.process_pool = ProcessPoolExecutor(config.get("NUM_PROCESS"))
         self.work_task_pool = []
@@ -108,6 +113,8 @@ class QueueWorkers:
         self.last_task_time = time.time()
 
         self.compute_coefficient = 1
+        self.model_unload_timer = None  # Таймер для выгрузки модели
+        self.model_keep_alive_seconds = config.get("MODEL_KEEP_ALIVE_SECONDS")
 
     def put_into_queue(self, input_data: events.NewMessage.Event | list[events.NewMessage.Event]):
         task_list = []
@@ -157,9 +164,6 @@ class QueueWorkers:
         processed_img.save(output_image, format='PNG')
         output_image.seek(0)
 
-        # await loop.run_in_executor(self.process_pool, self.model_worker.unload())
-        # await loop.run_in_executor(self.process_pool, self.model_worker.load())
-
         return output_image
 
     async def worker_loop(self):
@@ -167,11 +171,28 @@ class QueueWorkers:
         while True:
             if not len(self.queue):
                 await asyncio.sleep(1)
+                if self.model_unload_timer and (time.time() - self.model_unload_timer > self.model_keep_alive_seconds):
+                    logger.info("Unloading models due to inactivity.")
+                    self.model_worker.unload()
+                    self.model_unload_timer = None
                 continue
             logger.info("Start process image")
 
+            # Сбрасываем таймер выгрузки модели, так как начинается новая задача
+            self.model_unload_timer = time.time()
+
+            # Загружаем модель, если она была выгружена
+            if self.model_worker.G_A_net is None:
+                logger.info("Loading models...")
+                self.model_worker.load()
+
             image_task = self._take_image_task()
             image_task.change_queue_pos(-1)
+
+            # Проверяем, что модель загружена перед обработкой
+            if self.model_worker.G_A_net is None:
+                logger.error("Model is not loaded properly.")
+                continue
 
             time_to_wait = image_task.predict_time_to_processes(self.compute_coefficient)
             await self.update_status()
