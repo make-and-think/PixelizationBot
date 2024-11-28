@@ -98,8 +98,7 @@ class ImageToProcess:
 
 class QueueWorkers:
     def __init__(self):
-        self.queue: deque[ImageToProcess] = deque()
-        self.user_queue_count = {}  # Инициализация словаря для отслеживания количества изображений для каждого пользователя
+        self.queue: deque[ImageToProcess] = deque()  # Очередь для изображений
         self.times_history = []
         self.model_worker = PixelizationModel()
         
@@ -117,33 +116,20 @@ class QueueWorkers:
         self.model_keep_alive_seconds = config.get("MODEL_KEEP_ALIVE_SECONDS")
 
     def put_into_queue(self, input_data: events.NewMessage.Event | list[events.NewMessage.Event]):
-        # Проверяем, является ли input_data списком
-        if isinstance(input_data, list):
-            user_id = input_data[0].sender_id  # Получаем ID пользователя из первого события
-        else:
-            user_id = input_data.sender_id  # Получаем ID пользователя
-
-        if user_id not in self.user_queue_count:
-            self.user_queue_count[user_id] = 0  # Инициализируем счетчик для нового пользователя
-
         task_list = []
         if isinstance(input_data, list):
             for event in input_data:
-                if self.user_queue_count[user_id] >= 10:  # Проверяем лимит
-                    logger.info(f"User {user_id} has reached the limit of 10 images.")
-                    return  # Прекращаем выполнение, если лимит достигнут
-                logger.info(f"Task added for processing image: {event.photo}")
-                task_list.append(
-                    ImageToProcess(event, len(self.queue) + 1, compute_coefficient=self.compute_coefficient))
-                self.user_queue_count[user_id] += 1  # Увеличиваем счетчик
+                if event.photo:  # Проверяем, есть ли фото в сообщении
+                    logger.info(f"Task added for processing image: {event.photo}")
+                    task_list.append(
+                        ImageToProcess(event, len(self.queue) + 1, compute_coefficient=self.compute_coefficient))
         else:
-            if self.user_queue_count[user_id] >= 10:  # Проверяем лимит
-                logger.info(f"User {user_id} has reached the limit of 10 images.")
-                return  # Прекращаем выполнение, если лимит достигнут
-            task_list = [ImageToProcess(input_data, len(self.queue) + 1, compute_coefficient=self.compute_coefficient)]
-            self.user_queue_count[user_id] += 1  # Увеличиваем счетчик
+            if input_data.photo:  # Проверяем, есть ли фото в сообщении
+                logger.info(f"Task added for processing image: {input_data.photo}")
+                task_list.append(
+                    ImageToProcess(input_data, len(self.queue) + 1, compute_coefficient=self.compute_coefficient))
 
-        self.queue.extend(task_list)
+        self.queue.extend(task_list)  # Добавляем все задачи в очередь
 
     async def update_status(self):
         time_to_wait = 0
