@@ -103,8 +103,8 @@ class QueueWorkers:
         self.times_history = []
         self.model_worker = PixelizationModel()
         
-        if self.model_worker.G_A_net is None:
-                self.model_worker.load()
+        #if self.model_worker.G_A_net is None:
+        #       self.model_worker.load()
 
         self.process_pool = ProcessPoolExecutor(config.get("NUM_PROCESS"))
         self.work_task_pool = []
