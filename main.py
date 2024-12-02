@@ -68,52 +68,30 @@ class ImageToProcess:
         return compute_coefficient * ((self.height * self.width) / self.pixel_size)
 
     def real_time_to_processes(self):
+        if self.start_time is None or self.end_time is None:
+            logger.error("Start time or end time is not set.")
+            return None
         return self.end_time - self.start_time
 
     def change_queue_pos(self, current_pos: int):
         self.current_queue_pos = current_pos
 
-    async def update_status_message(self, time_to_wait=0):
-        status_text = 'Please wait, your image is being processed...\n'
-        if self.error:
-            status_text = 'Something went wrong during processing. Please try again later.'
-        elif self.current_queue_pos == -1:
-            self.start_time = time.time()
-            status_text += f'(Estimated time: {time_to_wait:.2f} sec.)'
-        elif self.current_queue_pos <= -1:
-            status_text += 'Done.'
-            self.end_time = time.time()
-        else:
-            status_text += f'(Position in the queue: {self.current_queue_pos}; Estimated time: {time_to_wait:.2f} sec.)'
-
-        try:
-            if not self.relpy_message:
-                self.relpy_message = await self.event.reply(status_text)
-                return
-            await self.relpy_message.edit(status_text)
-        except Exception as e:
-            logger.info(f'Error updating message: {e}')
-        return self.current_queue_pos
-
 
 class QueueWorkers:
     def __init__(self):
-        self.queue: deque[ImageToProcess] = deque()  # Очередь для изображений
+        self.queue: deque[ImageToProcess] = deque()
         self.times_history = []
         self.model_worker = PixelizationModel()
-        
-        # Загрузка модели при инициализации
-        self.model_worker.load()  # Загрузка модели здесь
-
+        self.model_worker.load()
         self.process_pool = ProcessPoolExecutor(config.get("NUM_PROCESS"))
         self.work_task_pool = []
         for _ in range(config.NUM_PROCESS):
             self.work_task_pool.append(self.worker_loop())
         self.last_task_time = time.time()
-
         self.compute_coefficient = 1
-        self.model_unload_timer = None  # Таймер для выгрузки модели
+        self.model_unload_timer = None
         self.model_keep_alive_seconds = config.get("MODEL_KEEP_ALIVE_SECONDS")
+        self.status_message = None
 
     def put_into_queue(self, input_data: events.NewMessage.Event | list[events.NewMessage.Event]):
         task_list = []
@@ -129,15 +107,25 @@ class QueueWorkers:
                 task_list.append(
                     ImageToProcess(input_data, len(self.queue) + 1, compute_coefficient=self.compute_coefficient))
 
-        self.queue.extend(task_list)  # Добавляем все задачи в очередь
+        self.queue.extend(task_list)  # Добаляем все задачи в очередь
 
-    async def update_status(self):
-        time_to_wait = 0
-        # Отправляем только одно сообщение статуса
-        if self.queue:
-            image_task = self.queue[0]  # Берем первый элемент из очереди
-            time_to_wait += image_task.predict_time_to_processes(self.compute_coefficient)
-            await image_task.update_status_message(time_to_wait)
+    async def update_status(self, chat_id):
+        if not self.queue:
+            return
+
+        total_time_to_wait = sum(
+            image_task.predict_time_to_processes(self.compute_coefficient) for image_task in self.queue
+        )
+        queue_length = len(self.queue)
+        status_message = f"Images in queue: {queue_length}, estimated wait time: {total_time_to_wait:.2f} seconds"
+
+        await self.send_status_message(chat_id, status_message)
+
+    async def send_status_message(self, chat_id, message):
+        if not self.status_message:
+            self.status_message = await bot.send_message(chat_id, message)
+        else:
+            await self.status_message.edit(message)
 
     def _take_image_task(self):
         selected = self.queue.popleft()
@@ -182,13 +170,10 @@ class QueueWorkers:
                     self.model_worker.unload()
                     self.model_unload_timer = None
                 continue
-            
-            logger.info("Start process image")
 
-            # Сбрасываем таймер выгрузки модели, так как начинается новая задача
+            logger.info("Start process image")
             self.model_unload_timer = time.time()
 
-            # Проверяем, загружена ли модель, если нет, загружаем её
             if self.model_worker.G_A_net is None:
                 logger.info("Loading models...")
                 self.model_worker.load()
@@ -196,9 +181,10 @@ class QueueWorkers:
             image_task = self._take_image_task()
             image_task.change_queue_pos(-1)
 
+            image_task.start_time = time.time()
+
             time_to_wait = image_task.predict_time_to_processes(self.compute_coefficient)
-            await self.update_status()
-            await image_task.update_status_message(time_to_wait)
+            await self.update_status(image_task.event.chat_id)
 
             input_image_bytes = io.BytesIO()
             logger.info(
@@ -210,8 +196,12 @@ class QueueWorkers:
             try:
                 await bot.download_media(image_task.event.photo, file=input_image_bytes)
                 output_image = await self.process_image(input_image_bytes, image_task.pixel_size)
-                self.compute_coefficient = ((time.time() - image_task.start_time) * image_task.pixel_size) / (
+
+                image_task.end_time = time.time()
+
+                self.compute_coefficient = ((image_task.end_time - image_task.start_time) * image_task.pixel_size) / (
                         image_task.height * image_task.width)
+
                 await bot.send_file(
                     image_task.event.chat_id,
                     output_image,
@@ -220,13 +210,11 @@ class QueueWorkers:
                 )
 
                 image_task.change_queue_pos(-2)
-                await image_task.update_status_message()
 
             except Exception as e:
                 logger.error(f"Error when process image {e}")
                 image_task.error = True
-                await image_task.update_status_message()
-            self.last_task_time = time.time()  # Обновляем время последней задачи
+            self.last_task_time = time.time()
 
 processor = QueueWorkers()
 
