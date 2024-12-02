@@ -111,6 +111,8 @@ class QueueWorkers:
 
     async def update_status(self, chat_id):
         if not self.queue:
+            # Если очередь пуста, отправляем сообщение о завершении
+            await self.send_status_message(chat_id, "All tasks are completed.")
             return
 
         total_time_to_wait = sum(
