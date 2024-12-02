@@ -137,7 +137,7 @@ class QueueWorkers:
 
     async def update_status(self, chat_id):
         """Update pos in queue"""
-        print(self.user_queue_count.keys())
+        print(self.user_queue_count)
         for chat_id in self.user_queue_count.keys():
             total_time_to_wait = 0
             for i, image_task in enumerate(self.queue.copy()):
