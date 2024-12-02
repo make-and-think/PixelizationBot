@@ -1,7 +1,6 @@
 import multiprocessing
 if __name__ == '__main__':
     multiprocessing.set_start_method('spawn')
-import torch
 import uuid
 import time
 import asyncio
@@ -296,19 +295,7 @@ async def main():
         await bot.run_until_disconnected()
 
 
-def set_torch_device(device_choice):
-    if device_choice == 'cpu':
-        torch_device = torch.device('cpu')
-    elif device_choice == 'cuda' and torch.cuda.is_available():
-        torch_device = torch.device('cuda')
-    else:
-        torch_device = torch.device('cpu')
-        logger.warning("CUDA is not available, using CPU instead.")
-    return torch_device
-
 if __name__ == '__main__':
     args = parse_arguments()
     configure_device(args.device, config)
-    torch_device = set_torch_device(args.device)
-    # Use torch_device for model loading and inference
     asyncio.run(main())
