@@ -4,6 +4,9 @@ import os
 import torch
 import torch.multiprocessing as mp
 import argparse
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class Config:
@@ -25,8 +28,10 @@ def configure_device(device_choice, config):
     if device_choice == 'cpu' or (device_choice is None and config.get("FORCE_USE_CPU")):
         os.environ["CUDA_VISIBLE_DEVICES"] = ""
         torch.set_num_threads(1)
+        logger.info("Using device: cpu")
     elif device_choice == 'cuda':
         os.environ.pop("CUDA_VISIBLE_DEVICES", None)  # Allow CUDA usage
+        logger.info("Using device: cuda")
 
 
 with open('config/config.yml') as f:
