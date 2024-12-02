@@ -124,9 +124,12 @@ class QueueWorkers:
         await self.send_status_message(chat_id, status_message)
 
     async def send_status_message(self, chat_id, message):
-        if not self.status_message:
+        current_time = time.time()
+        if not self.status_message or (current_time - self.status_message.date.timestamp() > 60):
+            # Если нет предыдущего сообщения или прошло больше 60 секунд, отправляем новое сообщение
             self.status_message = await bot.send_message(chat_id, message)
         else:
+            # Иначе редактируем предыдущее сообщение
             await self.status_message.edit(message)
 
     def _take_image_task(self):
