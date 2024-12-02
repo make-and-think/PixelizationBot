@@ -59,7 +59,6 @@ class ImageToProcess:
 
         if event.text:
             try:
-                print(self.current_queue_pos, event.text)
                 self.pixel_size = int(event.text)
                 self.pixel_size = max(1, min(self.pixel_size, 16))
             except ValueError:
@@ -137,11 +136,9 @@ class QueueWorkers:
 
     async def update_status(self, chat_id):
         """Update pos in queue"""
-        print(self.user_queue_count)
         for chat_id in self.user_queue_count.keys():
             total_time_to_wait = 0
             for i, image_task in enumerate(self.queue.copy()):
-                print(i, image_task)
                 total_time_to_wait += image_task.predict_time_to_processes(self.compute_coefficient)
                 status_message = f"Images in queue: {i}, estimated wait time: {total_time_to_wait:.2f} seconds"
                 await self._send_status_message(chat_id, status_message)
