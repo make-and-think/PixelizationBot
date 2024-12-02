@@ -30,8 +30,13 @@ def configure_device(device_choice, config):
         torch.set_num_threads(1)
         logger.info("Using device: cpu")
     elif device_choice == 'cuda':
-        os.environ.pop("CUDA_VISIBLE_DEVICES", None)  # Allow CUDA usage
-        logger.info("Using device: cuda")
+        if torch.cuda.is_available():
+            os.environ.pop("CUDA_VISIBLE_DEVICES", None)  # Allow CUDA usage
+            logger.info("Using device: cuda")
+        else:
+            logger.error("CUDA is not available. Falling back to CPU.")
+            os.environ["CUDA_VISIBLE_DEVICES"] = ""
+            torch.set_num_threads(1)
 
 
 with open('config/config.yml') as f:
