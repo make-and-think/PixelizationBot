@@ -3,7 +3,6 @@ from yaml import Loader
 import os
 import torch
 import torch.multiprocessing as mp
-import argparse
 
 
 class Config:
@@ -13,20 +12,6 @@ class Config:
 
     def get(self, name: str):
         return self.__dict__.get(name)
-
-
-def parse_arguments():
-    parser = argparse.ArgumentParser(description="Run the bot with specified device.")
-    parser.add_argument('--device', choices=['cuda', 'cpu'], help="Specify the device to use: 'cuda' or 'cpu'.")
-    return parser.parse_args()
-
-
-def configure_device(device_choice, config):
-    if device_choice == 'cpu' or (device_choice is None and config.get("FORCE_USE_CPU")):
-        os.environ["CUDA_VISIBLE_DEVICES"] = ""
-        torch.set_num_threads(1)
-    elif device_choice == 'cuda':
-        os.environ.pop("CUDA_VISIBLE_DEVICES", None)  # Allow CUDA usage
 
 
 with open('config/config.yml') as f:

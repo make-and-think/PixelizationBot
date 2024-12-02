@@ -24,7 +24,7 @@ from telethon.tl.functions.bots import SetBotCommandsRequest
 from pixelization import PixelizationModel
 from PIL import Image  # nah u to lazy to replace by wand
 
-from config.config import config, parse_arguments, configure_device
+from config.config import config
 
 if not os.path.exists('logs'):
     os.makedirs('logs')
@@ -296,6 +296,4 @@ async def main():
 
 
 if __name__ == '__main__':
-    args = parse_arguments()
-    configure_device(args.device, config)
     asyncio.run(main())
