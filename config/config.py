@@ -3,7 +3,11 @@ from yaml import Loader
 import os
 import torch
 import torch.multiprocessing as mp
-
+import argparse
+parser = argparse.ArgumentParser(description="PixelizationBot")
+parser.add_argument('--config', type=str, required=False, help='Path to the config file')
+args = parser.parse_args()
+CONFIG_FILE_PATH = 'config/config.yml' if not args.config else args.config
 
 class Config:
     # TODO make dynaconf
@@ -14,7 +18,7 @@ class Config:
         return self.__dict__.get(name)
 
 
-with open('config/config.yml') as f:
+with open(CONFIG_FILE_PATH) as f:
     config = load(f, Loader=Loader)
     config = Config(config)
 

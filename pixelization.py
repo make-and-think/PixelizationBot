@@ -7,7 +7,7 @@ import numpy as np
 import torch
 import torchvision.transforms as transforms
 import colorsys
-from typing.io import BinaryIO
+
 
 from models.logic.networks import define_G
 from config.config import config

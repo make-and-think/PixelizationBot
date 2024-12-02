@@ -1,4 +1,5 @@
 import multiprocessing
+
 if __name__ == '__main__':
     multiprocessing.set_start_method('spawn')
 import uuid
@@ -12,7 +13,7 @@ from concurrent.futures import ProcessPoolExecutor
 from torch.multiprocessing import Pool
 from datetime import datetime
 from functools import partial
-from collections import deque
+from collections import deque, Counter
 
 import aiofiles
 import aiofiles.os
@@ -80,57 +81,85 @@ class ImageToProcess:
 class QueueWorkers:
     def __init__(self):
         self.queue: deque[ImageToProcess] = deque()
-        self.times_history = []
+
+        self.user_queue_count = {}
+        self.user_queue_status = {}
+
         self.model_worker = PixelizationModel()
         self.model_worker.load()
+
         self.process_pool = ProcessPoolExecutor(config.get("NUM_PROCESS"))
         self.work_task_pool = []
+
         for _ in range(config.NUM_PROCESS):
             self.work_task_pool.append(self.worker_loop())
+
         self.last_task_time = time.time()
         self.compute_coefficient = 1
-        self.model_unload_timer = None
+        self.model_unload_timer = 0.0
         self.model_keep_alive_seconds = config.get("MODEL_KEEP_ALIVE_SECONDS")
+
         self.status_message = None
 
-    def put_into_queue(self, input_data: events.NewMessage.Event | list[events.NewMessage.Event]):
+    async def put_into_queue(self, input_data: events.NewMessage.Event | list[events.NewMessage.Event]):
         task_list = []
+        current_chat_id = None
+
         if isinstance(input_data, list):
+            current_chat_id = input_data[0].chat_id
             for event in input_data:
-                if event.photo:  # Проверяем, есть ли фото в сообщении
-                    logger.info(f"Task added for processing image: {event.photo}")
-                    task_list.append(
-                        ImageToProcess(event, len(self.queue) + 1, compute_coefficient=self.compute_coefficient))
+                logger.info(f"Task added for processing image: {event.photo}")
+                task_list.append(
+                    ImageToProcess(event, len(self.queue) + 1, compute_coefficient=self.compute_coefficient))
         else:
+            current_chat_id = input_data.chat_id
             if input_data.photo:  # Проверяем, есть ли фото в сообщении
                 logger.info(f"Task added for processing image: {input_data.photo}")
                 task_list.append(
                     ImageToProcess(input_data, len(self.queue) + 1, compute_coefficient=self.compute_coefficient))
 
-        self.queue.extend(task_list)  # Добаляем все задачи в очередь
+        if current_chat_id in self.user_queue_count:
+            current_chat_task_count = self.user_queue_count.get(current_chat_id)
+        else:
+            current_chat_task_count = 0
 
-    async def update_status(self, chat_id):
-        if not self.queue:
-            # Если очередь пуста, отправляем сообщение о завершении
-            await self.send_status_message(chat_id, "All tasks are completed.")
+        if (len(task_list) + current_chat_task_count) > 10:
+            await bot.send_message(current_chat_id,
+                                   f"To many images, now you have {10 - current_chat_task_count} slots in queue")
             return
 
-        total_time_to_wait = sum(
-            image_task.predict_time_to_processes(self.compute_coefficient) for image_task in self.queue
-        )
-        queue_length = len(self.queue)
-        status_message = f"Images in queue: {queue_length}, estimated wait time: {total_time_to_wait:.2f} seconds"
+        self.user_queue_count.update({current_chat_id: len(task_list) + current_chat_task_count})
+        print('put_into_queue', self.user_queue_count)
 
-        await self.send_status_message(chat_id, status_message)
+        # Добаляем все задачи в очередь
+        await self.update_status(current_chat_id)
+        self.queue.extend(task_list)
 
-    async def send_status_message(self, chat_id, message):
-        current_time = time.time()
-        if not self.status_message or (current_time - self.status_message.date.timestamp() > 60):
+    async def update_status(self, chat_id):
+        """Update pos in queue"""
+        print(self.user_queue_count.keys())
+        for chat_id in self.user_queue_count.keys():
+            total_time_to_wait = 0
+            for i, image_task in enumerate(self.queue.copy()):
+                print(i, image_task)
+                total_time_to_wait += image_task.predict_time_to_processes(self.compute_coefficient)
+                status_message = f"Images in queue: {i}, estimated wait time: {total_time_to_wait:.2f} seconds"
+                await self._send_status_message(chat_id, status_message)
+                if image_task.event.chat_id == chat_id:
+                    break
+
+    async def _send_status_message(self, chat_id, message):
+        if not chat_id in self.user_queue_status:
+            self.user_queue_status[chat_id] = None
+            self.user_queue_status[chat_id] = await bot.send_message(chat_id, message)
+
+        if self.user_queue_status[chat_id] is None:
+            return
+
+        if (time.time() - self.user_queue_status[chat_id].date.timestamp()) > 60:
             # Если нет предыдущего сообщения или прошло больше 60 секунд, отправляем новое сообщение
-            self.status_message = await bot.send_message(chat_id, message)
-        else:
-            # Иначе редактируем предыдущее сообщение
-            await self.status_message.edit(message)
+            if not self.user_queue_status[chat_id].text != message:
+                await self.user_queue_status[chat_id].edit(message)
 
     def _take_image_task(self):
         selected = self.queue.popleft()
@@ -184,12 +213,10 @@ class QueueWorkers:
                 self.model_worker.load()
 
             image_task = self._take_image_task()
+            await self.update_status(image_task.event.chat_id)
             image_task.change_queue_pos(-1)
 
             image_task.start_time = time.time()
-
-            time_to_wait = image_task.predict_time_to_processes(self.compute_coefficient)
-            await self.update_status(image_task.event.chat_id)
 
             input_image_bytes = io.BytesIO()
             logger.info(
@@ -215,11 +242,21 @@ class QueueWorkers:
                 )
 
                 image_task.change_queue_pos(-2)
+                current_chat_id = image_task.event.chat_id
+                if current_chat_id in self.user_queue_count:
+                    current_chat_task_count = self.user_queue_count.get(current_chat_id)
+                    if (current_chat_task_count - 1) == 0:
+                        del self.user_queue_count[current_chat_id]
+                        await bot.send_message(current_chat_id, "All image processing complete!")
+                        del self.user_queue_status[current_chat_id]
+                    else:
+                        self.user_queue_count.update({current_chat_id: current_chat_task_count - 1})
 
             except Exception as e:
                 logger.error(f"Error when process image {e}")
                 image_task.error = True
             self.last_task_time = time.time()
+
 
 processor = QueueWorkers()
 
@@ -247,20 +284,19 @@ async def on_message(event):
             text = message.text
         message.text = text
         event_list.append(message)
-
-    processor.put_into_queue(event_list)
+    await processor.put_into_queue(event_list)
 
 
 @bot.on(events.NewMessage())
 async def on_message(event):
     me = await bot.get_me()
-
+    if event.grouped_id:
+        return
     # Проверка, что сообщение отправлено пользователем, а не ботом
     if event.sender_id and event.sender_id != me.id:
-        if event.grouped_id:
-            return
+
         if event.photo:  # Проверяем, есть ли фото в сообщении
-            processor.put_into_queue(event)  # Помещаем одно изображение в очередь
+            await processor.put_into_queue(event)  # Помещаем одно изображение в очередь
         else:
             await event.reply('Please provide an image to pixelate.')
     else:
