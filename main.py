@@ -240,12 +240,14 @@ async def on_message(event):
     if event.sender_id and event.sender_id == me.id:
         return
 
+    text = None
     event_list = []
     for message in event.messages:
-        if message.photo:  # Проверяем, есть ли фото в сообщении
-            event_list.append(message)
+        if text is None:
+            text = message.text
+        message.text = text
+        event_list.append(message)
 
-    # Помещаем все изображения в очередь
     processor.put_into_queue(event_list)
 
 
