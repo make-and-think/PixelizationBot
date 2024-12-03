@@ -1,16 +1,20 @@
+# Bot config
 API_TOKEN: ''
 API_ID: 
 API_HASH: ''
-FORCE_USE_CPU: false
+
+# Model config
 NETG_PATH: "models/160_net_G_A.pth"
 ALIASNET_PATH: "models/alias_net.pth"
+VGG19_PATH : "models/pixelart_vgg19.pth"
 REFERENCE_PATH: "reference.png"
-SLOTS_QUANTITY: 10
-DELAY_STATUS: 60
+
+# Worker config
+FORCE_USE_CPU: false
 NUM_PROCESS: 1
 NUM_TORCH_THREADS: 2
 MODEL_KEEP_ALIVE_SECONDS: 300
-HUGGINGFACE_REPO: "ashleykleynhans/pixelization"
-NETG_MODEL_NAME: "160_net_G_A.pth"
-ALIASNET_MODEL_NAME: "alias_net.pth"
-VGG19_MODEL_NAME: "pixelart_vgg19.pth"
+
+# Queue config
+SLOTS_QUANTITY: 10
+DELAY_STATUS: 60

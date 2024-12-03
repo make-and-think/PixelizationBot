@@ -45,19 +45,27 @@ PixelizationBot is a Telegram bot that allows you to pixelate images. It uses ma
 
 1. **Create a configuration file:**
 
-   Copy `config/config.yml.example` to `config/config.yml` and edit it according to your needs.
-   
-   `cp config/config.yml.example config/config.yml`   
+Copy `config/config.yml.example` to `config/config.yml` and edit it according to your needs.
+ 
+
+`cp config/config.yml.example config/config.yml`   
+
 
 2. **Configuration parameters:**
-
-   - `API_ID` and `API_HASH`: Your Telegram application identifiers.
-   - `API_TOKEN`: Your bot's token.
-   - `NUM_PROCESS`: Number of workers for image processing.
-   - `MODEL_KEEP_ALIVE_SECONDS`: Time in seconds for which models remain loaded during inactivity.
-   - `NUM_TORCH_THREADS`: How many CPU cores will be used.
-   - `SLOTS_QUANTITY`: How many one user can send pictures in queue.
-   - `DELAY_STATUS`: How often we need update status in queue message
+   - **Bot config:**
+     - `API_ID` and `API_HASH`: Your Telegram application identifiers.
+     - `API_TOKEN`: Your bot's token.
+   - **Model config:**
+     - `NETG_PATH`, `ALIASNET_PATH`, `VGG19_PATH`: path where place models
+     - `REFERENCE_PATH`: path where stored coloro scheme image reference
+   - **Worker config:**
+     - `FORCE_USE_CPU`: Force to use CPU (if you have cuda card in your computer)
+     - `NUM_PROCESS`: Number of workers for image processing.
+     - `NUM_TORCH_THREADS`: How many CPU cores will be used.
+     - `MODEL_KEEP_ALIVE_SECONDS`: Time in seconds for which models remain loaded during inactivity.
+   - **Queue config:**
+     - `SLOTS_QUANTITY`: How many one user can send pictures in queue.
+     - `DELAY_STATUS`: How often we need update status in queue message
 
    Also you can use flag `--config` when start script, and set custom path for your configuration
    ```bash
@@ -68,7 +76,7 @@ PixelizationBot is a Telegram bot that allows you to pixelate images. It uses ma
 
 ## Example systemd Service
 
-   ```systemd
+```systemd
 [Unit]
 Description=Pixelization ML model Telegram bot.
 
@@ -84,8 +92,8 @@ WantedBy=default.target
 
 # Credits
 - [txlyre](https://github.com/txlyre) - prototype demo
-- [Th3ro](https://github.com/Th3roo)  - memory leak fix and support with another things
-- [Taruu](https://github.com/Taruu)   - Idea author with developing 
+- [Th3ro](https://github.com/Th3roo)  - memory leak fix and support with another developing
+- [Taruu](https://github.com/Taruu)   - Idea author and developing 
 
 ## Original repo project:
  - https://github.com/WuZongWei6/Pixelization

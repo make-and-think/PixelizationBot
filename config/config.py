@@ -10,6 +10,7 @@ parser.add_argument('--config', type=str, required=False, help='Path to the conf
 args = parser.parse_args()
 CONFIG_FILE_PATH = 'config/config.yml' if not args.config else args.config
 
+
 class Config:
     def __init__(self, data):
         self.__dict__.update(**data)
@@ -17,9 +18,15 @@ class Config:
     def get(self, name: str):
         return self.__dict__.get(name)
 
+
 with open(CONFIG_FILE_PATH) as f:
     config_data = load(f, Loader=Loader)
     config = Config(config_data)
+
+    config.HUGGINGFACE_REPO = "ashleykleynhans/pixelization"
+    config.NETG_MODEL_NAME = "160_net_G_A.pth"
+    config.ALIASNET_MODEL_NAME = "alias_net.pth"
+    config.VGG19_MODEL_NAME = "pixelart_vgg19.pth"
 
     if not config.get("HUGGINGFACE_REPO"):
         raise ValueError("HUGGINGFACE_REPO is not set in the configuration file.")
