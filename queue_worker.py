@@ -127,16 +127,16 @@ class QueueWorkers:
                     break
 
     async def _send_status_message(self, chat_id, message):
-        if chat_id not in self.user_queue_status:
-            self.user_queue_status[chat_id] = None
-            self.user_queue_status[chat_id] = await self.bot.send_message(chat_id, message)
-
-        if self.user_queue_status[chat_id] is None:
+        if (self.user_queue_status.get(chat_id) is None) and (chat_id in self.user_queue_status):
             return
 
-        if (time.time() - self.user_queue_status[chat_id].date.timestamp()) > 60:
+        if chat_id not in self.user_queue_status:
+            self.user_queue_status.update({chat_id: None})
+            self.user_queue_status.update({chat_id: await self.bot.send_message(chat_id, message)})
+            return
+        if (time.time() - self.user_queue_status[chat_id].date.timestamp()) > config.DELAY_STATUS:
             # Если нет предыдущего сообщения или прошло больше 60 секунд, отправляем новое сообщение
-            if not self.user_queue_status[chat_id].text != message:
+            if self.user_queue_status[chat_id].text != message:
                 await self.user_queue_status[chat_id].edit(message)
 
     def _take_image_task(self):
@@ -166,7 +166,7 @@ class QueueWorkers:
 
         output_image = io.BytesIO()
         now = datetime.now()
-        output_image.name = f'output-image-{now.strftime("%d.%m.%Y-%H:%M:%S")}.png'
+        output_image.name = f'output-pixai-image-{now.strftime("%d.%m.%Y-%H:%M:%S")}.png'
         processed_img.save(output_image, format='PNG')
         output_image.seek(0)
 
@@ -224,9 +224,9 @@ class QueueWorkers:
                 if current_chat_id in self.user_queue_count:
                     current_chat_task_count = self.user_queue_count.get(current_chat_id)
                     if (current_chat_task_count - 1) == 0:
-                        del self.user_queue_count[current_chat_id]
+                        self.user_queue_count.pop(current_chat_id)
                         await self.bot.send_message(current_chat_id, "All image processing complete!")
-                        del self.user_queue_status[current_chat_id]
+                        self.user_queue_status.pop(current_chat_id)
                     else:
                         self.user_queue_count.update({current_chat_id: current_chat_task_count - 1})
 
