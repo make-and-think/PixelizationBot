@@ -1,3 +1,5 @@
+import logging
+
 from yaml import load
 from yaml import Loader
 import os
@@ -30,3 +32,16 @@ with open(CONFIG_FILE_PATH) as f:
     if config.get("FORCE_USE_CPU"):
         os.environ["CUDA_VISIBLE_DEVICES"] = ""
         torch.set_num_threads(1)
+
+
+
+if not os.path.exists('logs'):
+    os.makedirs('logs')
+
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s',
+                    handlers=[
+                        logging.FileHandler('logs/bot.log'),
+                        logging.StreamHandler()
+                    ])
+logger = logging.getLogger(__name__)
