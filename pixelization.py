@@ -150,7 +150,7 @@ class PixelizationModel:
 
         download_model_if_not_exists("NETG_MODEL_NAME", self.netG_path)
         download_model_if_not_exists("ALIASNET_MODEL_NAME", self.aliasnet_path)
-        download_model_if_not_exists("VGG19_MODEL_NAME", config.V)
+        download_model_if_not_exists("VGG19_MODEL_NAME", config.VGG19_PATH)
 
         with torch.no_grad():
             self.G_A_net = define_G(3, 3, 64, "c2pGen", "instance", False, "normal", 0.02,
