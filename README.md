@@ -89,3 +89,9 @@ WantedBy=default.target
 
 ## Original repo project:
  - https://github.com/WuZongWei6/Pixelization
+
+
+# TODO 
+ - Make better queue system (always can be better)
+ - Remade Model network from scrap
+ - make custom lib for better conversation

@@ -102,8 +102,7 @@ class QueueWorkers:
 
         if (len(task_list) + current_chat_task_count) > config.SLOTS_QUANTITY:
             await self.bot.send_message(current_chat_id,
-                                        f"To many images, now you have\
-                                        {config.SLOTS_QUANTITY - current_chat_task_count} slots in queue")
+                                        f"To many images, now you have {config.SLOTS_QUANTITY - current_chat_task_count} slots in queue")
             return
 
         self.user_queue_count.update({current_chat_id: len(task_list) + current_chat_task_count})
@@ -119,8 +118,8 @@ class QueueWorkers:
             for i, image_task in enumerate(self.queue.copy()):
                 total_time_to_wait += image_task.predict_time_to_processes(self.compute_coefficient)
 
-                status_message = f"Images before you in queue: {i}, estimated wait time:\
-                                                                    {total_time_to_wait:.2f} seconds"
+                status_message = f"Images before you in queue: {i},\
+                estimated wait time: {total_time_to_wait:.2f} seconds"
 
                 await self._send_status_message(current_chat_id, status_message)
                 if image_task.event.chat_id == current_chat_id:
