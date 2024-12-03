@@ -24,7 +24,10 @@ PixelizationBot is a Telegram bot that allows you to pixelate images. It uses ma
    ```
 
 3. **Download the models:**
-
+   
+   Our software download models automatically from [HuggingFace 🤗](https://huggingface.co/ashleykleynhans/pixelization/tree/main)
+   
+   But you can this yourself:
    Download all three models from the table and place them into the `/models` directory inside the extension.
 
    | URL | Filename |
@@ -33,7 +36,10 @@ PixelizationBot is a Telegram bot that allows you to pixelate images. It uses ma
    | [Model 2 Link](https://drive.google.com/file/d/17f2rKnZOpnO9ATwRXgqLz5u5AZsyDvq_/view?usp=sharing) | alias_net.pth |
    | [Model 3 Link](https://drive.google.com/file/d/1i_8xL3stbLWNF4kdQJ50ZhnRFhSDh3Az/view?usp=sharing) | 160_net_G_A.pth |
 
-   Alternative download link for models: [Pixeldrain](https://pixeldrain.com/u/QfmACJAG)
+   Alternative download link for models: 
+   - [Pixeldrain](https://pixeldrain.com/u/QfmACJAG)
+   - [HuggingFace 🤗](https://huggingface.co/ashleykleynhans/pixelization/tree/main)
+   
 
 ## Configuration Setup
 
