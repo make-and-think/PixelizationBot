@@ -1,7 +1,7 @@
 # PixelizationBot
 
 PixelizationBot is a Telegram bot that allows you to pixelate images. It uses machine learning models to process images and provides a convenient interface for interaction via Telegram.
-
+![alt text](repository-open-graph-furry.png)
 ## Demo:
 [@pixelizationaibot](https://t.me/pixelizationaibot)
 
