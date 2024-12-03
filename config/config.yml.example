@@ -7,6 +7,10 @@ ALIASNET_PATH: "models/alias_net.pth"
 REFERENCE_PATH: "reference.png"
 SLOTS_QUANTITY: 10
 DELAY_STATUS: 60
-NUM_PROCESS: 2
+NUM_PROCESS: 1
 NUM_TORCH_THREADS: 2
 MODEL_KEEP_ALIVE_SECONDS: 300
+HUGGINGFACE_REPO: "ashleykleynhans/pixelization"
+NETG_MODEL_NAME: "160_net_G_A.pth"
+ALIASNET_MODEL_NAME: "alias_net.pth"
+VGG19_MODEL_NAME: "pixelart_vgg19.pth"

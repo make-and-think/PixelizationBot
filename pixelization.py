@@ -7,6 +7,7 @@ import numpy as np
 import torch
 import torchvision.transforms as transforms
 import colorsys
+from huggingface_hub import hf_hub_download
 
 
 from models.logic.networks import define_G
@@ -36,7 +37,18 @@ logger = logging.getLogger(__name__)
 #     img.save(file)
 #     logger.info(f"Image saved to {file}")
 
-
+def download_model_if_not_exists(model_name_key, model_path):
+    repo_id = config.get("HUGGINGFACE_REPO")
+    model_name = config.get(model_name_key)
+    
+    if not repo_id or not model_name:
+        raise ValueError("HUGGINGFACE_REPO or model name is not set in the configuration file.")
+    
+    if not os.path.exists(model_path):
+        logger.info(f"Downloading {model_name} from Hugging Face Hub ({repo_id})...")
+        hf_hub_download(repo_id=repo_id, filename=model_name, local_dir=os.path.dirname(model_path))
+        logger.info(f"Model {model_name} downloaded successfully.")
+        
 class PixelizationModel:
     def __init__(self, netG_path=NETG_PATH, aliasnet_path=ALIASNET_PATH, reference_path=REFERENCE_PATH):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -135,6 +147,11 @@ class PixelizationModel:
 
     def load(self):
         logger.info("Loading models...")
+
+        download_model_if_not_exists("NETG_MODEL_NAME", self.netG_path)
+        download_model_if_not_exists("ALIASNET_MODEL_NAME", self.aliasnet_path)
+        download_model_if_not_exists("VGG19_MODEL_NAME", "models/pixelart_vgg19.pth")
+
         with torch.no_grad():
             self.G_A_net = define_G(3, 3, 64, "c2pGen", "instance", False, "normal", 0.02,
                                     [0] if torch.cuda.is_available() else [])
@@ -167,6 +184,9 @@ class PixelizationModel:
 
         logger.info("Start start to_image")
         return self.to_image(out_t, pixel_size, upscale_after, original_img, copy_hue, copy_sat)
+
+
+
 
 
 def main():
