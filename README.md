@@ -77,9 +77,9 @@ WantedBy=default.target
 ```
 
 # Credits
-- txlyre - prototype demo
-- Th3ro (@Th3roo) - memory leak fix and support with another things
-- Taruu (@Taruu) - Idea author with developing 
+- [txlyre](https://github.com/txlyre) - prototype demo
+- [Th3ro](https://github.com/Th3roo)  - memory leak fix and support with another things
+- [Taruu](https://github.com/Taruu)   - Idea author with developing 
 
 ## Original repo project:
  - https://github.com/WuZongWei6/Pixelization
