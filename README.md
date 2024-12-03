@@ -65,7 +65,7 @@ Copy `config/config.yml.example` to `config/config.yml` and edit it according to
      - `MODEL_KEEP_ALIVE_SECONDS`: Time in seconds for which models remain loaded during inactivity.
    - **Queue config:**
      - `SLOTS_QUANTITY`: How many one user can send pictures in queue.
-     - `DELAY_STATUS`: How often we need update status in queue message
+     - `DELAY_STATUS`: How long before we need to update the queue message in seconds
 
    Also you can use flag `--config` when start script, and set custom path for your configuration
    ```bash
