@@ -115,13 +115,17 @@ class QueueWorkers:
         """Update pos in queue"""
         for current_chat_id in self.user_queue_count.keys():
             total_time_to_wait = 0
-            for i, image_task in enumerate(self.queue.copy()):
-                total_time_to_wait += image_task.predict_time_to_processes(self.compute_coefficient)
-
-                status_message = f"Images before you in queue: {i},estimated wait time: {total_time_to_wait:.2f} seconds"
-
-                await self._send_status_message(current_chat_id, status_message)
+            copy_instance_reverse = self.queue.copy()
+            copy_instance_reverse.reverse()
+            for i, image_task in enumerate(copy_instance_reverse):
                 if image_task.event.chat_id == current_chat_id:
+                    images_in_queue = len(copy_instance_reverse) - i
+                    for image_task_before in self.queue.copy():
+                        total_time_to_wait += image_task.predict_time_to_processes(self.compute_coefficient)
+                        if image_task == image_task_before:
+                            break
+                    status_message = f"Images in queue: {i},estimated wait time: {total_time_to_wait:.2f} seconds"
+                    await self._send_status_message(current_chat_id, status_message)
                     break
 
     async def _send_status_message(self, chat_id, message):
@@ -133,7 +137,7 @@ class QueueWorkers:
             self.user_queue_status.update({chat_id: await self.bot.send_message(chat_id, message)})
             return
         if (time.time() - self.user_queue_status[chat_id].date.timestamp()) > config.DELAY_STATUS:
-            # Если нет предыдущего сообщения или прошло больше 60 секунд, отправляем новое сообщение
+            self.bot.send_message(chat_id, message)
             if self.user_queue_status[chat_id].text != message:
                 await self.user_queue_status[chat_id].edit(message)
 
