@@ -139,8 +139,13 @@ class QueueWorkers:
             self.user_queue_status.update({chat_id: None})
             self.user_queue_status.update({chat_id: await self.bot.send_message(chat_id, message)})
             return
+
         if self.user_queue_status[chat_id].message != message:
-            await self.user_queue_status[chat_id].edit(message)
+            try:
+                await self.user_queue_status[chat_id].edit(message)
+            except Exception as e:
+                logger.debug(f"Error editing message: {e}")
+                self.user_queue_status[chat_id] = await self.bot.send_message(chat_id, message)
 
         if (time.time() - self.user_queue_status[chat_id].date.timestamp()) > config.DELAY_STATUS:
             self.user_queue_status[chat_id] = await self.bot.send_message(chat_id, message)
