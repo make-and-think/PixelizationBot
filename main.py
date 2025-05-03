@@ -54,23 +54,20 @@ async def on_message(event):
             text = message.text
         message.text = text
         event_list.append(message)
+
     await processor.put_into_queue(event_list)
 
 
 @bot.on(events.NewMessage())
 async def on_message(event):
-    me = await bot.get_me()
-    if event.grouped_id:
+    bot_me_obj = await bot.get_me()
+    if event.grouped_id:  # Check if is album message
         return
-    # Проверка, что сообщение отправлено пользователем, а не ботом
-    if event.sender_id and event.sender_id != me.id:
-
-        if event.photo:  # Проверяем, есть ли фото в сообщении
-            await processor.put_into_queue(event)  # Помещаем одно изображение в очередь
+    if event.sender_id and event.sender_id != bot_me_obj.id:
+        if event.photo:
+            await processor.put_into_queue(event)
         else:
             await event.reply('Please provide an image to pixelate.')
-    else:
-        logger.info("Message from bot ignored.")  # Логирование игнорируемого сообщения
 
 
 @bot.on(events.NewMessage(pattern='/start'))

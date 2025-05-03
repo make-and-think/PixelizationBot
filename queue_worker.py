@@ -10,6 +10,7 @@ from concurrent.futures import ProcessPoolExecutor
 from telethon import events
 
 from PIL import Image  # nah u to lazy to replace by wand
+from torch.fx.experimental.unification.multipledispatch.dispatcher import source
 
 from config.config import config, logger
 from pixelization import PixelizationModel
@@ -53,12 +54,52 @@ class ImageToProcess:
         self.current_queue_pos = current_pos
 
 
+class TaskQueue():
+    def __int__(self, task_limit_per_user=config.SLOTS_QUANTITY):
+        super().__init__()
+        self.deque = deque()
+
+        self.task_limit = task_limit_per_user
+        self.item_form_source_count = {}
+
+    def source_count_get(self, source):
+        return self.item_form_source_count.get(source, 0)
+
+    def append(self, source: any, item: any):
+        task_count = self.item_form_source_count.get(source)
+
+        if int(task_count) + 1 > self.task_limit:
+            return None
+
+        if not task_count:
+            self.item_form_source_count.update({source: 1})
+        else:
+            self.item_form_source_count[source] += 1
+
+        self.deque.append((source, item))
+        return len(self.deque)
+
+    def get(self):
+        data = self.deque.popleft()
+        source, item = data
+        self.item_form_source_count[source] -= 1
+        if self.item_form_source_count[source] <= 0:
+            self.item_form_source_count.pop(source, None)
+        return item
+
+    def __len__(self):
+        return len(self.deque)
+
+
 class QueueWorkers:
     """QueueWorker to handle image queue"""
 
-    def __init__(self, tbot):
+    def __init__(self, tbot, max_slots=config.SLOTS_QUANTITY):
         self.bot = tbot
         self.queue: deque[ImageToProcess] = deque()
+
+        self._max_slots = max_slots
+        self.task_queue = TaskQueue()
 
         self.user_queue_count = {}
         self.user_queue_status = {}
@@ -75,9 +116,48 @@ class QueueWorkers:
         self.last_task_time = time.time()
         self.compute_coefficient = 1
         self.model_unload_timer = 0.0
+
+        self.last_time_image_processes = 0.0
+
         self.model_keep_alive_seconds = config.get("MODEL_KEEP_ALIVE_SECONDS")
 
         self.status_message = None
+
+        self.workers_running = True
+
+    def __del__(self):
+        self.workers_running = False
+
+    async def put_into_queue(self, input_messages: list[events.NewMessage.Event]):
+        user_chat_id = input_messages[0].chat_id  # TODO make handle
+        items_in_queue_from_chat = self.task_queue.source_count_get(user_chat_id)
+
+        if items_in_queue_from_chat + len(input_messages) > self._max_slots:
+            await self.bot.send_message(user_chat_id,
+                                        f"To many images, now you have {items_in_queue_from_chat} slots in queue")
+            if len(input_messages) > 1:
+                await self.bot.send_message(user_chat_id, f"Now you try send {len(input_messages)} images")
+            return
+
+        task_list = [ImageToProcess(item_event, 0)
+                     for item_event in input_messages]
+
+        time_for_own_tasks = 0
+        for task in task_list:
+            time_for_own_tasks += task.predict_time_to_processes(self.compute_coefficient)
+
+        time_in_queue = 0
+        for _, task_in_queue in self.task_queue.deque:
+            time_in_queue += task_in_queue.predict_time_to_processes(self.compute_coefficient)
+
+        await self.bot.send_message(user_chat_id, f"""
+        Time to handle you images ~{time_for_own_tasks}.\n
+        Time before start process you image ~{time_in_queue}.\n
+        You current position in queue: {len(self.task_queue.deque)}
+""")
+
+        for item in task_list:
+            self.task_queue.append(user_chat_id, item)
 
     async def put_into_queue(self, input_data: events.NewMessage.Event | list[events.NewMessage.Event]):
         task_list = []
@@ -183,11 +263,36 @@ class QueueWorkers:
 
         return output_image
 
+    async def work_loop(self, worker_number: int):
+        logger.info(f"Start Worker {worker_number}")
+        while self.workers_running:
+
+            if ((time.time() - self.last_time_image_processes)
+                    > self.model_keep_alive_seconds
+                    and (self.model_worker.G_A_net and
+                         self.model_worker.alias_net)
+                    and not len(self.task_queue.deque)
+            ):
+                logger.info("Unloading models due to inactivity.")
+                self.model_worker.unload()
+
+            if not len(self.task_queue.deque):
+                await asyncio.sleep(1)
+                continue
+
+            if (self.model_worker.G_A_net and
+                    self.model_worker.alias_net):
+                logger.info("Load models after inactivity")
+                self.model_worker.load()
+
+            self.last_time_image_processes = time.time()
+
     async def worker_loop(self, number):
         logger.info(f"Start worker {number}")
         while True:
             if not len(self.queue):
                 await asyncio.sleep(1)
+                # if bot to long not work we unload model
                 if self.model_unload_timer and (time.time() - self.model_unload_timer > self.model_keep_alive_seconds):
                     logger.info("Unloading models due to inactivity.")
                     self.model_worker.unload()
