@@ -5,6 +5,8 @@ import torch
 import torch.multiprocessing as mp
 import argparse
 
+# TODO remade to use dynconf
+
 parser = argparse.ArgumentParser(description="PixelizationBot")
 parser.add_argument('--config', type=str, required=False, help='Path to the config file')
 args = parser.parse_args()

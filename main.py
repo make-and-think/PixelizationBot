@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 bot = TelegramClient('bot', config.API_ID, config.API_HASH)
 
-processor = QueueWorkers(bot)
+imageQueueWorker = QueueWorkers(bot)
 
 
 async def set_bot_commands():
@@ -55,7 +55,7 @@ async def on_message(event):
         message.text = text
         event_list.append(message)
 
-    await processor.put_into_queue(event_list)
+    await imageQueueWorker.put_into_queue(event_list)
 
 
 @bot.on(events.NewMessage())
@@ -65,7 +65,7 @@ async def on_message(event):
         return
     if event.sender_id and event.sender_id != bot_me_obj.id:
         if event.photo:
-            await processor.put_into_queue(event)
+            await imageQueueWorker.put_into_queue([event])
         else:
             await event.reply('Please provide an image to pixelate.')
 
@@ -88,10 +88,14 @@ async def help_message(event):
 async def main():
     async with bot:
         logger.info("Starting the main bot loop")
+        logger.info(f"Start botname :{await bot.get_me()}")
         await set_bot_commands()
-        for image_work_task in processor.work_task_pool:
+
+        for image_work_task in imageQueueWorker.work_task_pool:
             logger.info("Put work task")
             bot.loop.create_task(image_work_task)
+
+        bot.loop.create_task(imageQueueWorker.status_loop())
 
         logger.info("Starting the bot")  # Logging
         await bot.start(bot_token=config.API_TOKEN)

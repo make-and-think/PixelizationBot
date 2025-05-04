@@ -7,12 +7,12 @@ API_HASH: ''
 NETG_PATH: "models/160_net_G_A.pth"
 ALIASNET_PATH: "models/alias_net.pth"
 VGG19_PATH : "models/pixelart_vgg19.pth"
-REFERENCE_PATH: "reference.png"
+REFERENCE_PATH: "images/reference.png"
 
 # Worker config
-FORCE_USE_CPU: false
+FORCE_USE_CPU: true
 NUM_PROCESS: 1
-NUM_TORCH_THREADS: 2
+NUM_TORCH_THREADS: 1
 MODEL_KEEP_ALIVE_SECONDS: 300
 
 # Queue config

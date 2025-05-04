@@ -16,7 +16,7 @@ from config.config import config, logger
 from pixelization import PixelizationModel
 
 
-class ImageToProcess:
+class ImageTaskToProcess:
     """Image task in queue"""
 
     def __init__(self, event: events.NewMessage.Event, queue_pos, compute_coefficient=1):
@@ -55,18 +55,17 @@ class ImageToProcess:
 
 
 class TaskQueue():
-    def __int__(self, task_limit_per_user=config.SLOTS_QUANTITY):
-        super().__init__()
-        self.deque = deque()
 
+    def __init__(self, task_limit_per_user=config.SLOTS_QUANTITY):
+        self.deque = deque()
         self.task_limit = task_limit_per_user
         self.item_form_source_count = {}
 
     def source_count_get(self, source):
         return self.item_form_source_count.get(source, 0)
 
-    def append(self, source: any, item: any):
-        task_count = self.item_form_source_count.get(source)
+    def append_task(self, source: any, item: any):
+        task_count = self.item_form_source_count.get(source, 0)
 
         if int(task_count) + 1 > self.task_limit:
             return None
@@ -79,7 +78,7 @@ class TaskQueue():
         self.deque.append((source, item))
         return len(self.deque)
 
-    def get(self):
+    def get_task(self):
         data = self.deque.popleft()
         source, item = data
         self.item_form_source_count[source] -= 1
@@ -96,7 +95,7 @@ class QueueWorkers:
 
     def __init__(self, tbot, max_slots=config.SLOTS_QUANTITY):
         self.bot = tbot
-        self.queue: deque[ImageToProcess] = deque()
+        self.queue: deque[ImageTaskToProcess] = deque()
 
         self._max_slots = max_slots
         self.task_queue = TaskQueue()
@@ -111,7 +110,7 @@ class QueueWorkers:
         self.work_task_pool = []
 
         for i in range(config.NUM_PROCESS):
-            self.work_task_pool.append(self.worker_loop(i + 1))
+            self.work_task_pool.append(self.work_loop(i + 1))
 
         self.last_task_time = time.time()
         self.compute_coefficient = 1
@@ -125,21 +124,32 @@ class QueueWorkers:
 
         self.workers_running = True
 
+        # make test run
+        start_test_run = time.time()
+        with Image.open("images/test_image.png") as image:
+            self.model_worker.pixelize(image, 6)
+        end_test_run = time.time()
+        end_test_run += 1
+        self.compute_coefficient = ((end_test_run - start_test_run) * 6) / (
+                image.height * image.width)
+
     def __del__(self):
         self.workers_running = False
+        self.work_task_pool = []
 
     async def put_into_queue(self, input_messages: list[events.NewMessage.Event]):
+        print(input_messages)
         user_chat_id = input_messages[0].chat_id  # TODO make handle
         items_in_queue_from_chat = self.task_queue.source_count_get(user_chat_id)
 
         if items_in_queue_from_chat + len(input_messages) > self._max_slots:
-            await self.bot.send_message(user_chat_id,
-                                        f"To many images, now you have {items_in_queue_from_chat} slots in queue")
-            if len(input_messages) > 1:
-                await self.bot.send_message(user_chat_id, f"Now you try send {len(input_messages)} images")
+            status_message = f"""To many images, now you have {items_in_queue_from_chat} pictures in queue"
+Now you try send {len(input_messages)} images
+            """
+            await self.bot.send_message(user_chat_id, status_message)
             return
 
-        task_list = [ImageToProcess(item_event, 0)
+        task_list = [ImageTaskToProcess(item_event, 0)
                      for item_event in input_messages]
 
         time_for_own_tasks = 0
@@ -150,93 +160,54 @@ class QueueWorkers:
         for _, task_in_queue in self.task_queue.deque:
             time_in_queue += task_in_queue.predict_time_to_processes(self.compute_coefficient)
 
-        await self.bot.send_message(user_chat_id, f"""
-        Time to handle you images ~{time_for_own_tasks}.\n
-        Time before start process you image ~{time_in_queue}.\n
-        You current position in queue: {len(self.task_queue.deque)}
-""")
+        status_message = f"""Time to processing you new images ~{time_for_own_tasks:.2f}.
+Time before start process you image ~{time_in_queue:.2f}.
+You current position in queue: {len(self.task_queue.deque)}
+"""
+        await self.bot.send_message(user_chat_id, status_message)
 
         for item in task_list:
-            self.task_queue.append(user_chat_id, item)
+            print(user_chat_id, item, task_list)
+            self.task_queue.append_task(user_chat_id, item)
 
-    async def put_into_queue(self, input_data: events.NewMessage.Event | list[events.NewMessage.Event]):
-        task_list = []
+    async def status_loop(self):
+        while self.workers_running:
+            await self.send_current_status()
+            await asyncio.sleep(10)
 
-        if isinstance(input_data, list):
-            current_chat_id = input_data[0].chat_id
-            for event in input_data:
-                logger.info(f"Task added for processing image: {event.photo}")
-                task_list.append(
-                    ImageToProcess(event, len(self.queue) + 1, compute_coefficient=self.compute_coefficient))
-        else:
-            current_chat_id = input_data.chat_id
-            if input_data.photo:  # Проверяем, есть ли фото в сообщении
-                logger.info(f"Task added for processing image: {input_data.photo}")
-                task_list.append(
-                    ImageToProcess(input_data, len(self.queue) + 1, compute_coefficient=self.compute_coefficient))
-
-        if current_chat_id in self.user_queue_count:
-            current_chat_task_count = self.user_queue_count.get(current_chat_id)
-        else:
-            current_chat_task_count = 0
-
-        if (len(task_list) + current_chat_task_count) > config.SLOTS_QUANTITY:
-            await self.bot.send_message(current_chat_id,
-                                        f"To many images, now you have {config.SLOTS_QUANTITY - current_chat_task_count} slots in queue")
+    async def send_current_status(self):
+        last_user_chat_id = None
+        count_items = 0
+        time_to_process_items = 0
+        position_in_queue = 0
+        print(len(self.task_queue.deque), self.task_queue.deque)
+        if not len(self.task_queue.deque):
             return
 
-        self.user_queue_count.update({current_chat_id: len(task_list) + current_chat_task_count})
+        for user_chat_id, image_task in self.task_queue.deque:
+            print(user_chat_id, image_task)
+            if last_user_chat_id is None:
+                last_user_chat_id = user_chat_id
 
-        # Добаляем все задачи в очередь
-        await self.update_status(current_chat_id)
-        self.queue.extend(task_list)
+            time_to_process_items += image_task.predict_time_to_processes(self.compute_coefficient)
+            count_items += 1
 
-    async def update_status(self, chat_id):
-        """Update pos in queue"""
-        for current_chat_id in self.user_queue_count.keys():
+            if last_user_chat_id != user_chat_id:
+                position_in_queue = 0 if (position_in_queue - count_items) < 0 else position_in_queue - count_items
+                status_message = f"""You position in queue: {position_in_queue}
+Time to processed you images (with wait time in queue): ~{time_to_process_items:.2f}"""
 
-            copy_instance_reverse = self.queue.copy()
-            copy_instance_reverse.reverse()
+                await self.bot.send_message(user_chat_id, status_message)
+                count_items = 0
 
-            total_time_to_wait = 0
-
-            for i, image_task in enumerate(copy_instance_reverse):
-                if image_task.event.chat_id == current_chat_id:
-                    images_in_queue = len(copy_instance_reverse) - i
-                    for image_task_before in self.queue.copy():
-                        total_time_to_wait += image_task_before.predict_time_to_processes(self.compute_coefficient)
-                        if image_task.event.id == image_task_before.event.id:
-                            break
-                    status_message = f"Images in queue: {images_in_queue},estimated wait time: {total_time_to_wait:.2f} seconds"
-                    await self._send_status_message(current_chat_id, status_message)
-                    break
-
-    async def _send_status_message(self, chat_id, message):
-        if (self.user_queue_status.get(chat_id) is None) and (chat_id in self.user_queue_status):
-            return
-
-        if chat_id not in self.user_queue_status:
-            self.user_queue_status.update({chat_id: None})
-            self.user_queue_status.update({chat_id: await self.bot.send_message(chat_id, message)})
-            return
-
-        if self.user_queue_status[chat_id].message != message:
-            try:
-                await self.user_queue_status[chat_id].edit(message)
-            except Exception as e:
-                logger.debug(f"Error editing message: {e}")
-                self.user_queue_status[chat_id] = await self.bot.send_message(chat_id, message)
-
-        if (time.time() - self.user_queue_status[chat_id].date.timestamp()) > config.DELAY_STATUS:
-            self.user_queue_status[chat_id] = await self.bot.send_message(chat_id, message)
-
-    def _take_image_task(self):
-        selected = self.queue.popleft()
-        for i, image_task in enumerate(self.queue):
-            image_task.change_queue_pos(i)
-        return selected
+            last_user_chat_id = user_chat_id
+        position_in_queue = 0 if (position_in_queue - count_items) < 0 else position_in_queue - count_items
+        status_message = f"""You position in queue: {position_in_queue}
+Time to processed you images (with wait time in queue): ~{time_to_process_items:.2f}"""
+        await self.bot.send_message(last_user_chat_id, status_message)
 
     async def process_image(self, image_bytes: io.BytesIO, pixel_size: int):
+        # TODO make try handle
         image_bytes.seek(0)
         original_img = Image.open(image_bytes)
 
@@ -266,87 +237,60 @@ class QueueWorkers:
     async def work_loop(self, worker_number: int):
         logger.info(f"Start Worker {worker_number}")
         while self.workers_running:
-
-            if ((time.time() - self.last_time_image_processes)
-                    > self.model_keep_alive_seconds
-                    and (self.model_worker.G_A_net and
-                         self.model_worker.alias_net)
-                    and not len(self.task_queue.deque)
+            # Work loop cond
+            if (((time.time() - self.last_time_image_processes)
+                 > self.model_keep_alive_seconds)
+                    and (self.model_worker.G_A_net is not None)
+                    and (self.model_worker.alias_net is not None)
+                    and len(self.task_queue.deque) == 0
             ):
                 logger.info("Unloading models due to inactivity.")
                 self.model_worker.unload()
 
-            if not len(self.task_queue.deque):
+            if len(self.task_queue.deque) == 0:
                 await asyncio.sleep(1)
                 continue
 
-            if (self.model_worker.G_A_net and
-                    self.model_worker.alias_net):
+            if ((self.model_worker.G_A_net is None)
+                    and (self.model_worker.alias_net is None)
+            ):
                 logger.info("Load models after inactivity")
                 self.model_worker.load()
 
             self.last_time_image_processes = time.time()
 
-    async def worker_loop(self, number):
-        logger.info(f"Start worker {number}")
-        while True:
-            if not len(self.queue):
-                await asyncio.sleep(1)
-                # if bot to long not work we unload model
-                if self.model_unload_timer and (time.time() - self.model_unload_timer > self.model_keep_alive_seconds):
-                    logger.info("Unloading models due to inactivity.")
-                    self.model_worker.unload()
-                    self.model_unload_timer = None
-                continue
+            image_task = self.task_queue.get_task()
 
-            logger.info("Start process image")
-            self.model_unload_timer = time.time()
+            image_task.start_time = time.time()  # Start timer of calc
 
-            if self.model_worker.G_A_net is None:
-                logger.info("Loading models...")
-                self.model_worker.load()
+            downloaded_image_bytes = await self._download_image(image_task)
+            logger.info(f"Start processing image: ID={image_task.event.photo.id}")
+            output_image = await self.process_image(downloaded_image_bytes, image_task.pixel_size)
 
-            image_task = self._take_image_task()
-            await self.update_status(image_task.event.chat_id)
-            image_task.change_queue_pos(-1)
+            logger.info(f"Send processed image: ID={image_task.event.photo.id} ")
 
-            image_task.start_time = time.time()
+            await self.bot.send_file(
+                image_task.event.chat_id,
+                output_image,
+                filename=output_image.name,
+                force_document=True
+            )
 
-            input_image_bytes = io.BytesIO()
-            logger.info(
-                f"Downloading image: ID={image_task.event.photo.id}, \
-                                Access Hash={image_task.event.photo.access_hash}, \
-                                Date={image_task.event.photo.date}, \
-                                Sizes={[(size.type, size.w, size.h) for size in image_task.event.photo.sizes]}")
+            image_task.end_time = time.time()  # End timer of calc
 
-            try:
-                await self.bot.download_media(image_task.event.photo, file=input_image_bytes)
-                output_image = await self.process_image(input_image_bytes, image_task.pixel_size)
+            self.compute_coefficient = ((image_task.end_time - image_task.start_time) * image_task.pixel_size) / (
+                    image_task.height * image_task.width)
 
-                image_task.end_time = time.time()
+    async def _download_image(self, image_task: events.NewMessage.Event):
+        input_image_bytes = io.BytesIO()
+        logger.info(
+            f"Downloading image: ID={image_task.event.photo.id}, \
+                                        Access Hash={image_task.event.photo.access_hash}, \
+                                        Date={image_task.event.photo.date}, \
+                                        Sizes={[(size.type, size.w, size.h) for size in image_task.event.photo.sizes]}")
+        try:
+            await self.bot.download_media(image_task.event.photo, file=input_image_bytes)
+        except Exception as error_message:
+            logger.error(f"Error when download image {error_message}")
 
-                self.compute_coefficient = ((image_task.end_time - image_task.start_time) * image_task.pixel_size) / (
-                        image_task.height * image_task.width)
-
-                await self.bot.send_file(
-                    image_task.event.chat_id,
-                    output_image,
-                    filename=output_image.name,
-                    force_document=True
-                )
-
-                image_task.change_queue_pos(-2)
-                current_chat_id = image_task.event.chat_id
-                if current_chat_id in self.user_queue_count:
-                    current_chat_task_count = self.user_queue_count.get(current_chat_id)
-                    if (current_chat_task_count - 1) == 0:
-                        self.user_queue_count.pop(current_chat_id)
-                        await self.bot.send_message(current_chat_id, "All image processing complete!")
-                        self.user_queue_status.pop(current_chat_id)
-                    else:
-                        self.user_queue_count.update({current_chat_id: current_chat_task_count - 1})
-
-            except Exception as e:
-                logger.error(f"Error when process image {e}")
-                image_task.error = True
-            self.last_task_time = time.time()
+        return input_image_bytes
