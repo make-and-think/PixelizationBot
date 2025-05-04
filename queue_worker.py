@@ -173,7 +173,7 @@ You current position in queue: {len(self.task_queue.deque)}
     async def status_loop(self):
         while self.workers_running:
             await self.send_current_status()
-            await asyncio.sleep(30)
+            await asyncio.sleep(120) #TODO use config file
 
     async def send_current_status(self):
         last_user_chat_id = None
