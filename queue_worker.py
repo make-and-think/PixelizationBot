@@ -173,19 +173,18 @@ You current position in queue: {len(self.task_queue.deque)}
     async def status_loop(self):
         while self.workers_running:
             await self.send_current_status()
-            await asyncio.sleep(10)
+            await asyncio.sleep(30)
 
     async def send_current_status(self):
         last_user_chat_id = None
         count_items = 0
         time_to_process_items = 0
         position_in_queue = 0
-        print(len(self.task_queue.deque), self.task_queue.deque)
+
         if not len(self.task_queue.deque):
             return
 
         for user_chat_id, image_task in self.task_queue.deque:
-            print(user_chat_id, image_task)
             if last_user_chat_id is None:
                 last_user_chat_id = user_chat_id
 
@@ -193,16 +192,19 @@ You current position in queue: {len(self.task_queue.deque)}
             count_items += 1
 
             if last_user_chat_id != user_chat_id:
-                position_in_queue = 0 if (position_in_queue - count_items) < 0 else position_in_queue - count_items
-                status_message = f"""You position in queue: {position_in_queue}
+                user_position_in_queue = 0 if (position_in_queue - count_items) < 0 else position_in_queue - count_items
+
+                status_message = f"""You position in queue: {user_position_in_queue}
 Time to processed you images (with wait time in queue): ~{time_to_process_items:.2f}"""
 
-                await self.bot.send_message(user_chat_id, status_message)
+                await self.bot.send_message(last_user_chat_id, status_message)
                 count_items = 0
 
             last_user_chat_id = user_chat_id
-        position_in_queue = 0 if (position_in_queue - count_items) < 0 else position_in_queue - count_items
-        status_message = f"""You position in queue: {position_in_queue}
+            position_in_queue += 1
+
+        user_position_in_queue = 0 if (position_in_queue - count_items) < 0 else position_in_queue - count_items
+        status_message = f"""You position in queue: {user_position_in_queue}
 Time to processed you images (with wait time in queue): ~{time_to_process_items:.2f}"""
         await self.bot.send_message(last_user_chat_id, status_message)
 

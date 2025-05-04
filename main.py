@@ -67,7 +67,7 @@ async def on_message(event):
         if event.photo:
             await imageQueueWorker.put_into_queue([event])
         else:
-            await event.reply('Please provide an image to pixelate.')
+            await event.reply('Please provide an image to pixelate. ')
 
 
 @bot.on(events.NewMessage(pattern='/start'))
