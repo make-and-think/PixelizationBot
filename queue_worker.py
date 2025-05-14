@@ -130,8 +130,8 @@ class QueueWorkers:
             self.model_worker.pixelize(image, 6)
         end_test_run = time.time()
         end_test_run += 1
-        self.compute_coefficient = ((end_test_run - start_test_run) * 6) / (
-                image.height * image.width)
+        self.compute_coefficient = (((end_test_run - start_test_run) * 6) / (
+                image.height * image.width))
 
     def __del__(self):
         self.workers_running = False
@@ -173,7 +173,7 @@ You current position in queue: {len(self.task_queue.deque)}
     async def status_loop(self):
         while self.workers_running:
             await self.send_current_status()
-            await asyncio.sleep(120) #TODO use config file
+            await asyncio.sleep(120)  # TODO use config file
 
     async def send_current_status(self):
         last_user_chat_id = None
@@ -280,8 +280,8 @@ Time to processed you images (with wait time in queue): ~{time_to_process_items:
 
             image_task.end_time = time.time()  # End timer of calc
 
-            self.compute_coefficient = ((image_task.end_time - image_task.start_time) * image_task.pixel_size) / (
-                    image_task.height * image_task.width)
+            self.compute_coefficient = (((image_task.end_time - image_task.start_time) * image_task.pixel_size) / (
+                    image_task.height * image_task.width))
 
     async def _download_image(self, image_task: events.NewMessage.Event):
         input_image_bytes = io.BytesIO()
